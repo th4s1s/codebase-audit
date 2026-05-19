@@ -109,17 +109,14 @@ Each client gets its **own self-contained copy** of the skill — installing one
 
 | Client | Skill content (`SKILL.md` + `workflows/` + `references/`) | Launcher(s) |
 |---|---|---|
-| **Copilot Chat** | `~/.copilot/skills/codebase-audit/` | _none_ — newer Copilot Chat auto-registers `SKILL.md` as the `/codebase-audit` slash command. (Older installs dropped a `<vscode-prompts-dir>/codebase-audit.prompt.md` file; the installer removes it on every run to avoid a duplicate autocomplete entry.) |
+| **Copilot Chat** | `~/.copilot/skills/codebase-audit/` | _none_ — `SKILL.md` is auto-registered as `/codebase-audit` |
 | **Claude Code CLI** | `~/.claude/skills/codebase-audit/` *(Claude auto-discovers via description triggers)* | `~/.claude/commands/codebase-audit.md` and `~/.claude/commands/codebase-audit/*.md` |
 
 ### How the Claude launchers find the skill
 
-Claude launcher files live in [`claude/commands/`](claude/commands/) as templates containing the literal string `__SKILL_DIR__`. `install.sh` `sed`-substitutes it with the **per-client** skill dir on copy:
+Claude launcher files live in [`claude/commands/`](claude/commands/) as templates containing the literal string `__SKILL_DIR__`. `install.sh` `sed`-substitutes it with the per-client skill dir on copy, so the launchers always point at `~/.claude/skills/codebase-audit/...`.
 
-- Copilot skill content → `/home/<user>/.copilot/skills/codebase-audit/...` (no launcher, auto-registered)
-- Claude launchers → `/home/<user>/.claude/skills/codebase-audit/...`
-
-This means you can `./install.sh claude` on a machine that has no VS Code, and nothing ever touches `~/.copilot/`.
+You can `./install.sh claude` on a machine that has no VS Code, and nothing ever touches `~/.copilot/`.
 
 ### Special case: cloning directly into an install dir
 

@@ -4,8 +4,6 @@
 #
 # Design: each client gets its OWN self-contained copy of the skill.
 #   - Copilot install root: ~/.copilot/skills/codebase-audit/
-#       (newer Copilot Chat auto-registers SKILL.md as a slash command —
-#        no separate prompt-launcher file is installed)
 #   - Claude install root:  ~/.claude/skills/codebase-audit/
 #       launchers:          ~/.claude/commands/codebase-audit.md
 #                           ~/.claude/commands/codebase-audit/*.md
@@ -114,15 +112,9 @@ install_copilot() {
   echo "[copilot]"
   echo "  skill dir:     ${COPILOT_SKILL_DIR}"
   install_skill_files "${COPILOT_SKILL_DIR}"
-  # Legacy cleanup: older installs dropped a prompt-launcher file in the
-  # VS Code prompts dir. Newer Copilot Chat auto-registers SKILL.md as a
-  # slash command, so the launcher is now redundant and causes a duplicate
-  # `/codebase-audit` autocomplete entry. Remove it if present.
-  local legacy="${COPILOT_PROMPTS_DIR}/${SKILL_NAME}.prompt.md"
-  if [[ -f "${legacy}" ]]; then
-    echo "  removing legacy prompt launcher: ${legacy}"
-    rm -f "${legacy}"
-  fi
+  # Silently remove any legacy launcher left by older installs so it can't
+  # produce a duplicate `/codebase-audit` autocomplete entry.
+  rm -f "${COPILOT_PROMPTS_DIR}/${SKILL_NAME}.prompt.md"
 }
 
 install_claude() {
@@ -162,7 +154,6 @@ uninstall_skill_dir() {
 
 uninstall_copilot() {
   echo "[copilot] uninstalling"
-  # Remove the legacy prompt launcher if present (older installs only).
   rm -f "${COPILOT_PROMPTS_DIR}/${SKILL_NAME}.prompt.md"
   uninstall_skill_dir "${COPILOT_SKILL_DIR}"
 }
@@ -202,10 +193,8 @@ echo "Done."
 if [[ " ${TARGETS[*]} " == *" copilot "* ]]; then
   echo
   echo "Copilot Chat (VS Code): reload window, then type '/codebase-audit'."
-  echo "  The slash command is registered automatically from SKILL.md — there is"
-  echo "  no separate prompt-launcher file. To run a specific phase, type e.g."
-  echo "  '/codebase-audit recon' (or 'deploy' / 'audit' / 'fpcheck' /"
-  echo "  'verify <ids>' / 'report')."
+  echo "  For a specific phase: '/codebase-audit recon' (or deploy / audit /"
+  echo "  fpcheck / verify <ids> / report)."
 fi
 if [[ " ${TARGETS[*]} " == *" claude "* ]]; then
   echo
