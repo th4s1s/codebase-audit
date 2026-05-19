@@ -2,17 +2,24 @@
 # install.sh — Install the codebase-audit skill for GitHub Copilot Chat and/or
 # Claude Code CLI.
 #
-# Launcher files live in prompts/ (Copilot) and claude/commands/ (Claude) as
-# templates. install.sh just copies them with __SKILL_DIR__ substituted by the
-# actual install path so the launchers work from any project CWD.
+# Design: each client gets its OWN self-contained copy of the skill.
+#   - Copilot install root: ~/.copilot/skills/codebase-audit/
+#       launcher:           <vscode-prompts-dir>/codebase-audit.prompt.md
+#   - Claude install root:  ~/.claude/skills/codebase-audit/
+#       launchers:          ~/.claude/commands/codebase-audit.md
+#                           ~/.claude/commands/codebase-audit/*.md
+#
+# Launchers contain the literal string __SKILL_DIR__; install.sh sed-substitutes
+# it with the client's own SKILL_DIR so each set of launchers points at its own
+# copy. Installing one client does not touch the other.
 #
 # Usage:
-#   ./install.sh                  # install for both (auto-detect)
+#   ./install.sh                  # install for both clients
 #   ./install.sh copilot          # only Copilot Chat
 #   ./install.sh claude           # only Claude Code CLI
 #   ./install.sh --insiders       # use VS Code Insiders paths
-#   ./install.sh --prefix DIR     # custom skill install root (default: ~/.copilot/skills)
-#   ./install.sh --uninstall      # remove installed launcher files
+#   ./install.sh --uninstall      # remove the selected clients' launchers
+#                                 # AND their skill install dirs
 
 set -euo pipefail
 
@@ -23,15 +30,13 @@ SKILL_NAME="codebase-audit"
 TARGETS=()
 INSIDERS=0
 UNINSTALL=0
-PREFIX="${HOME}/.copilot/skills"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     copilot|claude|all) TARGETS+=("$1"); shift ;;
     --insiders) INSIDERS=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    --prefix) PREFIX="$2"; shift 2 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -40,7 +45,11 @@ if [[ ${#TARGETS[@]} -eq 0 ]] || [[ " ${TARGETS[*]} " == *" all "* ]]; then
   TARGETS=(copilot claude)
 fi
 
-# ---- detect VS Code prompts directory ----
+# ---- per-client paths ----
+COPILOT_SKILL_DIR="${HOME}/.copilot/skills/${SKILL_NAME}"
+CLAUDE_SKILL_DIR="${HOME}/.claude/skills/${SKILL_NAME}"
+CLAUDE_COMMANDS_DIR="${HOME}/.claude/commands"
+
 detect_copilot_prompts_dir() {
   local code_dir
   if [[ "${INSIDERS}" == "1" ]]; then code_dir="Code - Insiders"; else code_dir="Code"; fi
@@ -59,9 +68,7 @@ detect_copilot_prompts_dir() {
   esac
 }
 
-SKILL_DIR="${PREFIX}/${SKILL_NAME}"
 COPILOT_PROMPTS_DIR="$(detect_copilot_prompts_dir)"
-CLAUDE_COMMANDS_DIR="${HOME}/.claude/commands"
 
 # ---- sanity ----
 if [[ ! -f "${SCRIPT_DIR}/SKILL.md" ]]; then
@@ -71,84 +78,101 @@ fi
 
 # ---- helpers ----
 
-# Copy a template file, replacing __SKILL_DIR__ with $SKILL_DIR. Use '|' as
-# sed delimiter so '/' characters in SKILL_DIR don't need escaping.
-copy_template() {
-  local src="$1" dst="$2"
-  mkdir -p "$(dirname "${dst}")"
-  sed -e "s|__SKILL_DIR__|${SKILL_DIR}|g" "${src}" > "${dst}"
-  echo "  -> ${dst}"
-}
-
+# Copy SKILL.md + workflows/ + references/ from SCRIPT_DIR into $1.
+# Skips if target is the same as SCRIPT_DIR (e.g. cloned directly into install
+# location).
 install_skill_files() {
-  mkdir -p "${SKILL_DIR}"
-  local abs_skill_dir
-  abs_skill_dir="$(cd "${SKILL_DIR}" && pwd -P)"
-  if [[ "${SCRIPT_DIR}" == "${abs_skill_dir}" ]]; then
-    echo "  (skill source dir IS install dir; skipping skill file copy)"
+  local target="$1"
+  mkdir -p "${target}"
+  local abs_target
+  abs_target="$(cd "${target}" && pwd -P)"
+  if [[ "${SCRIPT_DIR}" == "${abs_target}" ]]; then
+    echo "  (source dir IS install dir; skipping skill file copy)"
     return
   fi
-  echo "  Copying skill files -> ${SKILL_DIR}"
-  cp -f "${SCRIPT_DIR}/SKILL.md" "${SKILL_DIR}/SKILL.md"
+  echo "  Copying skill content -> ${target}"
+  cp -f "${SCRIPT_DIR}/SKILL.md" "${target}/SKILL.md"
   for sub in workflows references; do
     if [[ -d "${SCRIPT_DIR}/${sub}" ]]; then
-      mkdir -p "${SKILL_DIR}/${sub}"
-      cp -f "${SCRIPT_DIR}/${sub}/"*.md "${SKILL_DIR}/${sub}/" 2>/dev/null || true
+      mkdir -p "${target}/${sub}"
+      cp -f "${SCRIPT_DIR}/${sub}/"*.md "${target}/${sub}/" 2>/dev/null || true
     fi
   done
 }
 
+# sed-substitute __SKILL_DIR__ in $1 with $3, write result to $2.
+# Uses '|' as sed delimiter so '/' in paths needs no escaping.
+copy_template() {
+  local src="$1" dst="$2" skill_dir="$3"
+  mkdir -p "$(dirname "${dst}")"
+  sed -e "s|__SKILL_DIR__|${skill_dir}|g" "${src}" > "${dst}"
+  echo "  -> ${dst}"
+}
+
 install_copilot() {
-  echo "[copilot] target prompts dir: ${COPILOT_PROMPTS_DIR}"
-  install_skill_files
+  echo "[copilot]"
+  echo "  skill dir:     ${COPILOT_SKILL_DIR}"
+  echo "  prompts dir:   ${COPILOT_PROMPTS_DIR}"
+  install_skill_files "${COPILOT_SKILL_DIR}"
   for f in "${SCRIPT_DIR}/prompts/"*.prompt.md; do
     [[ -e "$f" ]] || continue
-    copy_template "$f" "${COPILOT_PROMPTS_DIR}/$(basename "$f")"
+    copy_template "$f" "${COPILOT_PROMPTS_DIR}/$(basename "$f")" "${COPILOT_SKILL_DIR}"
   done
 }
 
 install_claude() {
-  echo "[claude] target commands dir: ${CLAUDE_COMMANDS_DIR}"
-  install_skill_files
+  echo "[claude]"
+  echo "  skill dir:     ${CLAUDE_SKILL_DIR}"
+  echo "  commands dir:  ${CLAUDE_COMMANDS_DIR}"
+  install_skill_files "${CLAUDE_SKILL_DIR}"
   # Top-level command
   if [[ -f "${SCRIPT_DIR}/claude/commands/${SKILL_NAME}.md" ]]; then
     copy_template \
       "${SCRIPT_DIR}/claude/commands/${SKILL_NAME}.md" \
-      "${CLAUDE_COMMANDS_DIR}/${SKILL_NAME}.md"
+      "${CLAUDE_COMMANDS_DIR}/${SKILL_NAME}.md" \
+      "${CLAUDE_SKILL_DIR}"
   fi
   # Namespaced sub-commands
   if [[ -d "${SCRIPT_DIR}/claude/commands/${SKILL_NAME}" ]]; then
     for f in "${SCRIPT_DIR}/claude/commands/${SKILL_NAME}/"*.md; do
       [[ -e "$f" ]] || continue
-      copy_template "$f" "${CLAUDE_COMMANDS_DIR}/${SKILL_NAME}/$(basename "$f")"
+      copy_template "$f" \
+        "${CLAUDE_COMMANDS_DIR}/${SKILL_NAME}/$(basename "$f")" \
+        "${CLAUDE_SKILL_DIR}"
     done
   fi
 }
 
+uninstall_skill_dir() {
+  local target="$1"
+  local abs_target
+  abs_target="$(cd "${target}" 2>/dev/null && pwd -P || echo /nonexistent)"
+  if [[ -d "${target}" && "${SCRIPT_DIR}" != "${abs_target}" ]]; then
+    echo "  removing ${target}"
+    rm -rf "${target}"
+  else
+    echo "  (skipping ${target} — does not exist OR is the source dir)"
+  fi
+}
+
 uninstall_copilot() {
-  echo "[copilot] removing prompts"
+  echo "[copilot] uninstalling"
   for f in "${SCRIPT_DIR}/prompts/"*.prompt.md; do
     [[ -e "$f" ]] || continue
     rm -f "${COPILOT_PROMPTS_DIR}/$(basename "$f")"
   done
+  uninstall_skill_dir "${COPILOT_SKILL_DIR}"
 }
 
 uninstall_claude() {
-  echo "[claude] removing commands"
+  echo "[claude] uninstalling"
   rm -f "${CLAUDE_COMMANDS_DIR}/${SKILL_NAME}.md"
   rm -rf "${CLAUDE_COMMANDS_DIR}/${SKILL_NAME}"
-}
-
-uninstall_skill_files() {
-  if [[ -d "${SKILL_DIR}" && "${SCRIPT_DIR}" != "$(cd "${SKILL_DIR}" && pwd -P 2>/dev/null || echo /nonexistent)" ]]; then
-    echo "Removing skill dir ${SKILL_DIR}"
-    rm -rf "${SKILL_DIR}"
-  fi
+  uninstall_skill_dir "${CLAUDE_SKILL_DIR}"
 }
 
 # ---- run ----
 echo "Targets: ${TARGETS[*]}"
-echo "Skill install root: ${SKILL_DIR}"
 echo
 
 if [[ "${UNINSTALL}" == "1" ]]; then
@@ -158,7 +182,7 @@ if [[ "${UNINSTALL}" == "1" ]]; then
       claude)  uninstall_claude ;;
     esac
   done
-  uninstall_skill_files
+  echo
   echo "Uninstalled."
   exit 0
 fi
@@ -181,4 +205,6 @@ if [[ " ${TARGETS[*]} " == *" claude "* ]]; then
   echo
   echo "Claude Code CLI: '/codebase-audit', '/codebase-audit:recon', :deploy, :audit,"
   echo "  :fpcheck, :verify <ids>, :report"
+  echo "  (Claude also auto-loads the skill from ~/.claude/skills/${SKILL_NAME}/ based"
+  echo "   on description triggers, e.g. 'audit this app'.)"
 fi
