@@ -41,7 +41,7 @@ Batches the raw findings (~8–12 per batch) and spawns parallel subagents to ap
 ### 5. [`verify`](workflows/verify.md) — per-finding live PoC, **runs in a forked conversation**
 For each true positive: build the PoC against the documented base URL, capture full HTTP request/response (`curl -i`), determine **CONFIRMED / REFUTED / INCONCLUSIVE**, and write `artifacts/verify-<finding-id>.md`. For `local-managed` instances, may back up + edit + restart configs (always restored at end). For `external-provided` instances, any finding requiring config changes or restart is marked **INCONCLUSIVE** with the required operator action — the fork must never substitute `127.0.0.1` for a remote host (would silently test the wrong service).
 
-Each fork covers ~5–8 findings so HTTP noise doesn't bloat the orchestrator's context.
+Each fork covers ~5–8 findings so HTTP noise doesn't bloat the orchestrator's context. The orchestrator also accepts `/codebase-audit:verify` **with no IDs** — in that mode it scans the on-disk `verify-*.md` artifacts and prints a reconciled status table (CONFIRMED / REFUTED / INCONCLUSIVE / MISSING) without running any PoC. No paste-back required.
 
 ### 6. [`report`](workflows/report.md) — consolidated final report
 Stitches every `verify-<id>.md` + FP verdict into:
@@ -69,7 +69,7 @@ Includes a coverage matrix (every group, every CVE, every finding) and a section
    Batches findings and spawns FP-review subagents. Output: `cba_fp_verdicts` and per-batch artifacts. The orchestrator surfaces the TP-only list and asks you to open verify forks.
 
 6. **Verify** — open one forked chat per ~5–8 findings.
-   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts. When it's done, the fork returns a summary table you paste back to the orchestrator.
+   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts directly to `reports/audit-<timestamp>/artifacts/`. **You don't need to paste anything back to the orchestrator** — it reads the artifacts from disk. Whenever you want a progress snapshot, run `/codebase-audit:verify` (no IDs) on the orchestrator and it will scan the artifacts, reconcile against the TP list, and print a CONFIRMED / REFUTED / INCONCLUSIVE / MISSING status table.
 
 7. **Report** (`/codebase-audit:report` or `report`).
    Stitches everything into `report.md` + `disclosure-summary.md`. Done.

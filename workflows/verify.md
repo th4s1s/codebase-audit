@@ -1,13 +1,30 @@
-# `/codebase-audit:verify` — Per-Finding Live PoC (Runs in a FORK)
+# `/codebase-audit:verify` — Per-Finding Live PoC
 
-**Purpose**: Reproduce true-positive findings against the deployed live instance. **This workflow runs in a forked conversation**, not the main orchestrator. The fork covers a small batch of findings (~5-8) and writes one artifact per finding.
+**Purpose**: Reproduce true-positive findings against the deployed live instance and record the result as an on-disk artifact per finding. This workflow has **two modes** depending on where it is invoked:
 
-**Entry**: You are a forked conversation. The user pasted a verify-fork prompt. The audit's main orchestrator is paused awaiting fork completion.
-**Exit**: One `verify-<finding-id>.md` artifact per in-scope finding. Return a summary table to the user (who will hand it back to the orchestrator).
+| Invoked from | Mode | What it does |
+|---|---|---|
+| **A forked conversation** (user opened a new chat and pasted the fork prompt, or ran `/codebase-audit:verify <ids>` in the fork) | `fork` | Runs the per-finding PoC loop and writes `verify-<finding-id>.md` artifacts. Returns a summary table for the user's eyes. |
+| **The main orchestrator** (no fork prompt; user just runs `/codebase-audit:verify`) | `orchestrator-ingest` | Scans `reports/audit-<timestamp>/artifacts/verify-*.md`, reconciles against `cba_fp_verdicts`, surfaces a status table, and updates the resume note. **Does NOT run any PoC.** |
+
+**Entry**:
+- Fork mode: you are a forked conversation. The user pasted a verify-fork prompt or ran `/codebase-audit:verify <comma-separated-ids>`. The orchestrator is paused awaiting fork completion.
+- Orchestrator-ingest mode: you are the main orchestrator and the user ran `/codebase-audit:verify` with no finding IDs. Some verify forks have produced (or finished producing) artifacts.
+
+**Exit**:
+- Fork mode: one `verify-<finding-id>.md` artifact per in-scope finding; summary table printed to the user.
+- Orchestrator-ingest mode: status table showing which findings have artifacts (CONFIRMED / REFUTED / INCONCLUSIVE / MISSING), and an updated resume note. No artifacts ever need to be pasted back — the orchestrator reads them directly from disk.
 
 ---
 
-## Step 0 — Orient yourself
+## Mode detection (do this first)
+
+- If the user provided a comma-separated list of finding IDs (e.g. `/codebase-audit:verify G1-F1,G1-F2`) **or** you are in a forked conversation that received a verify-fork prompt → you are in **fork mode**. Proceed to Step 0.
+- Otherwise → you are in **orchestrator-ingest mode**. Jump to the [Orchestrator-ingest mode](#orchestrator-ingest-mode) section at the bottom of this file.
+
+---
+
+## Step 0 — Orient yourself  *(fork mode)*
 
 You are a fork. Do these reads first (parallel):
 
@@ -158,14 +175,14 @@ curl -sSI <base-url>/<known-stable-route>            # status unchanged vs Step 
 
 ## Step 4 — Return summary
 
-Return a compact markdown table to the user:
+Return a compact markdown table to the user (this is for the user's situational awareness — **the orchestrator does NOT need it pasted back**, it reads the `verify-<id>.md` artifacts directly from disk):
 
 | Finding | Status | Severity (orig → final) | One-line note |
 |---|---|---|---|
 | G<n>-F<m> | CONFIRMED | HIGH → HIGH | Live PoC: <one-line> |
 | … | … | … | … |
 
-Plus a one-paragraph high-level summary the user can paste back to the orchestrator.
+Plus a one-paragraph high-level summary. The user can close this fork once the table looks right; the orchestrator will pick the artifacts up on its next `/codebase-audit:verify` (ingest) or `/codebase-audit:report` invocation.
 
 ## Common Pitfalls (see also [../references/lessons-learned.md](../references/lessons-learned.md))
 
@@ -185,3 +202,77 @@ Plus a one-paragraph high-level summary the user can paste back to the orchestra
 - [ ] All config backups have been restored
 - [ ] Live instance is operational (health check passes)
 - [ ] You have NOT modified `cba_findings` or `cba_fp_verdicts`
+
+---
+
+## Orchestrator-ingest mode
+
+You are the **main orchestrator** and the user ran `/codebase-audit:verify` with no finding IDs. Some verify forks have produced (or finished producing) artifacts and you need to reconcile them against the FP-check verdicts.
+
+**You do not run any PoC in this mode. You only read artifacts that already exist.**
+
+### Step A — Locate the audit dir + scan artifacts
+
+Get the active `reports/audit-<timestamp>/` from the resume note (or `ls -td reports/audit-*` if missing). Then:
+
+```bash
+ls -1 reports/audit-<timestamp>/artifacts/verify-*.md 2>/dev/null
+```
+
+For each file, extract:
+- `<finding-id>` from the filename (`verify-G1-F2.md` → `G1-F2`)
+- `Status:` line (CONFIRMED | REFUTED | INCONCLUSIVE)
+- `Severity adjustment:` line (orig → final)
+- The one-sentence `Interpretation` (for the table)
+
+### Step B — Reconcile against `cba_fp_verdicts`
+
+Query the TRUE_POSITIVE list:
+
+```sql
+SELECT finding_id FROM cba_fp_verdicts WHERE verdict = 'TRUE_POSITIVE';
+```
+
+Cross-check against the artifact set. Three possible states per TP finding:
+
+| State | Meaning | Action |
+|---|---|---|
+| Artifact exists + Status is CONFIRMED/REFUTED/INCONCLUSIVE | Fork finished | Include in status table |
+| Artifact exists but Status field is missing/blank | Fork wrote a partial file | Flag for user attention |
+| No artifact | No fork has covered this finding yet | List as MISSING — user needs to open another fork |
+
+### Step C — Surface the status table
+
+Print a single table for the user:
+
+| Finding | Status | Severity (orig → final) | Source artifact | Note |
+|---|---|---|---|---|
+| G1-F1 | CONFIRMED | HIGH → HIGH | `verify-G1-F1.md` | <one-line interpretation> |
+| G1-F2 | INCONCLUSIVE (external) | MED → MED | `verify-G1-F2.md` | Requires operator restart |
+| G2-F5 | **MISSING** | n/a | \_none\_ | Open a fork for this finding |
+| … | … | … | … | … |
+
+Group by status. Highlight `MISSING` entries first so the user knows which forks still need to run.
+
+### Step D — Update the resume note
+
+Append (or refresh) a "Verify status snapshot" section to `/memories/session/<project>-audit-resume.md` with:
+- Total TPs
+- CONFIRMED count
+- REFUTED count
+- INCONCLUSIVE count + brief reasons
+- MISSING list (finding IDs)
+
+Do NOT mark verify DONE in the resume note unless every TP has a non-MISSING artifact.
+
+### Step E — Tell the user what to do next
+
+- If MISSING is non-empty: tell the user which finding IDs still need a fork, and provide a copy-pasteable fork prompt for each (or a single prompt batching them ~5-8 per fork).
+- If MISSING is empty: confirm verify is complete and suggest `/codebase-audit:report` (after the recommended manual compact).
+
+### Mode-specific Quality Checks
+
+- [ ] You did NOT run any curl / PoC / live-instance probe
+- [ ] You did NOT modify `cba_findings` or `cba_fp_verdicts`
+- [ ] Every TP finding from `cba_fp_verdicts` appears in the status table (either with an artifact or as MISSING)
+- [ ] Resume note's "Verify status snapshot" reflects current disk state
