@@ -15,6 +15,67 @@ recon ──► deploy ──► audit ──► fpcheck ──► [open N forks
                        SQLite audit.db (single source of truth)
 ```
 
+The pipeline produces a `reports/audit-<timestamp>/` directory containing a SQLite `audit.db` (single source of truth for findings, FP verdicts, attack surface), per-group/per-batch markdown artifacts, per-finding live-PoC artifacts, and a final consolidated `report.md` + `disclosure-summary.md` ready for vendor disclosure.
+
+## The six workflows
+
+Each phase is one file in [`workflows/`](workflows/). Run them individually (recommended on first use, so you understand what each does) or let the full pipeline run them in order with user gates between phases.
+
+### 1. [`recon`](workflows/recon.md) — source detection + parallel feature mapping
+Detects whether the target is a source tree, an IDA Pro MCP binary, or both, then enumerates the attack surface (HTTP routes, gRPC services, CLI entrypoints, message handlers, file/network sinks). Splits the codebase into **feature groups** (G1, G2, …) and spawns one `general-purpose` subagent per group to produce `files/G<n>-mapping.md`. Populates `cba_feature_groups`, `cba_attack_surface`, `cba_security_observations` in `audit.db`. Ends by writing the resume note to session memory.
+
+### 2. [`deploy`](workflows/deploy.md) — live-instance setup
+Makes sure a live instance is reachable so later phases have a reproduction target. Supports two modes:
+
+- **`local-managed`** — we bring it up from the repo (Docker Compose, `make run`, etc.); we own the lifecycle, config files, and restart.
+- **`external-provided`** — instance is already running somewhere we don't own (staging, customer VM, remote host); we have only HTTP-layer access, **no config edits, no restart**.
+
+Either way, produces a single repo-memory artifact `/memories/repo/<project>-live-instance.md` documenting **deployment mode, capabilities, base URLs, the operator-supplied liveness command, off-limits surface**, and (for local-managed) bind-mounted configs and common ops. Every later phase and every verify fork reads this note first.
+
+### 3. [`audit`](workflows/audit.md) — CVE ingest + patch-bypass mining + parallel deep audit
+Fetches prior CVEs/GHSAs and their patch diffs (populating `cba_known_findings`). For each patch, checks sibling files for the **same root cause left untouched** — historically the highest-yield class of findings. Then spawns one `general-purpose` subagent per feature group to do adversarial source-level audit, populating `cba_findings` and writing per-group `artifacts/G<n>-findings.md`.
+
+### 4. [`fpcheck`](workflows/fpcheck.md) — parallel static false-positive review
+Batches the raw findings (~8–12 per batch) and spawns parallel subagents to apply the **18 Hard Exclusions + 10 Precedent rules + Marginal Gain Test**. Static review only — does not touch the live instance (that's verify's job; separating them keeps "I couldn't reproduce" handwaves from killing real source-level bugs). Populates `cba_fp_verdicts` and writes per-batch `artifacts/phase5-batch<X>.md`.
+
+### 5. [`verify`](workflows/verify.md) — per-finding live PoC, **runs in a forked conversation**
+For each true positive: build the PoC against the documented base URL, capture full HTTP request/response (`curl -i`), determine **CONFIRMED / REFUTED / INCONCLUSIVE**, and write `artifacts/verify-<finding-id>.md`. For `local-managed` instances, may back up + edit + restart configs (always restored at end). For `external-provided` instances, any finding requiring config changes or restart is marked **INCONCLUSIVE** with the required operator action — the fork must never substitute `127.0.0.1` for a remote host (would silently test the wrong service).
+
+Each fork covers ~5–8 findings so HTTP noise doesn't bloat the orchestrator's context.
+
+### 6. [`report`](workflows/report.md) — consolidated final report
+Stitches every `verify-<id>.md` + FP verdict into:
+- `report.md` — full audit report with verified findings ordered by severity
+- `disclosure-summary.md` — short vendor-facing summary suitable for an advisory
+
+Includes a coverage matrix (every group, every CVE, every finding) and a section listing INCONCLUSIVE findings with the required operator action.
+
+## Typical audit walkthrough
+
+1. **Open the target project's workspace** in VS Code (or `cd` into it for Claude CLI).
+2. **Start with recon**:
+   - Copilot: `/codebase-audit` → answer `recon`
+   - Claude: `/codebase-audit:recon`
+
+   The orchestrator detects source/IDA, proposes a feature-group split, asks you to confirm, then spawns mapping subagents in parallel. Output: `files/G<n>-mapping.md`, populated SQL tables, resume note.
+
+3. **Deploy** (`/codebase-audit:deploy` or answer `deploy`).
+   Tell the orchestrator whether the instance is `local-managed` or `external-provided`. For external, hand it the base URLs, sample auth tokens, off-limits surface, and the exact liveness command the operator considers authoritative. Output: `/memories/repo/<project>-live-instance.md`.
+
+4. **Audit** (`/codebase-audit:audit` or `audit`).
+   Ingests CVEs, mines patch-bypass surfaces, then spawns one deep-audit subagent per group in parallel. Reviews each `artifacts/G<n>-findings.md` as it lands. Output: populated `cba_findings`, per-group artifacts.
+
+5. **FP-check** (`/codebase-audit:fpcheck` or `fpcheck`).
+   Batches findings and spawns FP-review subagents. Output: `cba_fp_verdicts` and per-batch artifacts. The orchestrator surfaces the TP-only list and asks you to open verify forks.
+
+6. **Verify** — open one forked chat per ~5–8 findings.
+   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts. When it's done, the fork returns a summary table you paste back to the orchestrator.
+
+7. **Report** (`/codebase-audit:report` or `report`).
+   Stitches everything into `report.md` + `disclosure-summary.md`. Done.
+
+At any point, context compaction is recoverable: every phase rewrites a resume note in `/memories/session/<project>-audit-resume.md`. A fresh orchestrator instance can read it and pick up exactly where the previous one left off.
+
 ## Install
 
 ```bash
