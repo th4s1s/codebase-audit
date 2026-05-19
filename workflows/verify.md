@@ -12,18 +12,27 @@
 You are a fork. Do these reads first (parallel):
 
 1. `/memories/session/<project>-audit-resume.md` — current pipeline state, what's TP, fork inventory, live-instance pointer
-2. `/memories/repo/<project>-live-instance.md` — endpoints, bind-mounted config, restart commands, hand-edit warnings
+2. `/memories/repo/<project>-live-instance.md` — **deployment mode, capabilities, base URLs, liveness command**, bind-mounted config, hand-edit log
 3. Each in-scope finding's section in `reports/audit-<timestamp>/artifacts/G<n>-findings.md`
 4. The corresponding FP-check verdict reason from `cba_fp_verdicts` (verifies the FP-check was satisfied this is a real bug, so any "can't reproduce" outcome is suspicious)
 
-Confirm the live instance is reachable:
+Confirm the live instance is reachable using the **liveness command from the live-instance note** (do not invent one — `/health` may 404 or be sensitive, and `127.0.0.1` may be the wrong host):
 
 ```bash
-curl -sS http://127.0.0.1:<port>/health 2>&1 | head
-docker compose ps  # or equivalent
+<liveness command from live-instance note>     # e.g. curl -fsS <base-url>/<liveness-path>
 ```
 
-If it isn't up: bring it up using the commands documented in the live-instance note. Don't change the deployment configuration unless required for a specific PoC (and back it up if so).
+For `local-managed` mode you may additionally use container introspection (`docker compose ps`, etc.). For `external-provided` mode the HTTP probe is the only signal — **do not** swap in a local-loopback probe; that will silently test the wrong target.
+
+### Mode-dependent constraints (read before planning ANY PoC)
+
+The `Capabilities` table in the live-instance note is authoritative. For `external-provided` instances in particular:
+
+- **No config backup / edit / restart.** Skip Steps 1b, 1c, 1f for those findings. If a finding **requires** a config change, mark it **INCONCLUSIVE** with status note `requires operator-coordinated change: <what>` — do NOT attempt a local-loopback substitute.
+- **No filesystem access.** Treat the target purely as an HTTP black box.
+- **Respect the "Off-limits surface" list** in the note — skip any finding whose PoC would hit a forbidden path/method, mark INCONCLUSIVE with reason `operator forbids hitting <surface>`.
+
+If the live instance is **not reachable** and mode is `local-managed`, bring it up using the documented `Common ops` commands. If it is not reachable and mode is `external-provided`, stop — return to the user with the unreachable status; do NOT attempt to restart or redeploy. The user must coordinate with the operator.
 
 ## Step 1 — Per-finding loop
 
@@ -31,12 +40,14 @@ For EACH finding in scope:
 
 ### 1a. Plan the PoC
 
-From the artifact's "PoC" section, extract the curl/payload. Identify what live-instance changes are needed:
+From the artifact's "PoC" section, extract the curl/payload. Identify what live-instance changes are needed and cross-check against the `Capabilities` table:
 
 - **No changes**: curl against an existing route → trivial, just run.
-- **Temp rule needed**: edit `rules.json` / matching config → **BACK UP FIRST**.
-- **Temp config needed**: edit `config.yaml` → **BACK UP FIRST**.
-- **Restart required**: note it; restart adds latency.
+- **Temp rule needed**: edit `rules.json` / matching config → **BACK UP FIRST** (only if `edit-config: yes`; otherwise INCONCLUSIVE).
+- **Temp config needed**: edit `config.yaml` → **BACK UP FIRST** (same constraint).
+- **Restart required**: note it; restart adds latency (only if `restart-service: yes`; otherwise INCONCLUSIVE).
+
+If any required capability is **no**, do not proceed with that finding — write the artifact with status **INCONCLUSIVE** and reason `requires <capability> which is unavailable in <mode> mode`. Skip the rest of Step 1 for that finding.
 
 ### 1b. Back up before any modification
 
@@ -54,10 +65,10 @@ Where `<X>` is your fork letter and `<finding-id>` is the current finding. This 
 
 ### 1d. Apply the change, restart if needed, capture HTTP output
 
-Use `curl -i` to capture full headers + body. Pipe to a temp file if large:
+Use `curl -i` to capture full headers + body. Build the URL from the **base URL recorded in the live-instance note** — never substitute `127.0.0.1` for a remote host. Pipe to a temp file if large:
 
 ```bash
-curl -sSi <endpoint> -H '<malicious-header>' -d '<payload>' | tee /tmp/poc-<id>.txt
+curl -sSi <base-url>/<path> -H '<malicious-header>' -d '<payload>' | tee /tmp/poc-<id>.txt
 ```
 
 Capture:
@@ -128,12 +139,21 @@ That's the orchestrator's job in the report phase. You only write artifact files
 
 ## Step 3 — Final restoration check
 
-Before returning to the user, verify the live instance is back to baseline:
+Before returning to the user, verify the live instance is back to baseline.
+
+For `local-managed` mode:
 
 ```bash
 diff /tmp/<config-original-backup> <config-file>  # should be empty
-curl -s <api-url>/rules | jq  # should match pre-fork state
-docker compose ps                # services still up
+curl -s <admin-base-url>/rules | jq  # should match pre-fork state
+docker compose ps                                    # services still up
+```
+
+For `external-provided` mode (no filesystem / no lifecycle access), just re-run the documented liveness command and any read-only sanity probe:
+
+```bash
+<liveness command from live-instance note>           # exit 0 + expected status
+curl -sSI <base-url>/<known-stable-route>            # status unchanged vs Step 0
 ```
 
 ## Step 4 — Return summary
@@ -149,8 +169,10 @@ Plus a one-paragraph high-level summary the user can paste back to the orchestra
 
 ## Common Pitfalls (see also [../references/lessons-learned.md](../references/lessons-learned.md))
 
-- **Forgetting to restore** the live-instance config. Always verify restoration before returning.
+- **Forgetting to restore** the live-instance config (`local-managed`). Always verify restoration before returning.
 - **Editing the wrong config file** because the user edited it between phases. Re-read first.
+- **Probing `127.0.0.1` when mode is `external-provided`.** The loopback probe will appear to succeed against an unrelated service on your fork's host and silently invalidate every verdict. Always build URLs from the documented base URL.
+- **Attempting `docker compose ...` against an external instance.** You don't manage it. Mark INCONCLUSIVE and request operator coordination.
 - **Capturing only stdout, not headers** — use `curl -i` or `curl -D-`.
 - **Concluding REFUTED too quickly** when a default config guard could be relaxed. If the finding is "X works when Y is enabled" and Y is off by default, that's still TP — document the config requirement, don't refute.
 - **Spending excessive time on infra-blocked findings.** If you've spent more than a few attempts standing up infrastructure (e.g., gRPC test client) for one finding, mark INCONCLUSIVE and move on.

@@ -8,3 +8,6 @@ reports/
 .vscode/
 .idea/
 *.swp
+
+# Custom
+chat.json
