@@ -20,21 +20,29 @@ recon ──► deploy ──► audit ──► fpcheck ──► [open N forks
 ```bash
 git clone https://github.com/th4s1s/codebase-audit.git
 cd codebase-audit
-./install.sh                # installs for both Copilot and Claude (auto-detect)
+./install.sh                # install for both Copilot and Claude
 # or:
 ./install.sh copilot        # Copilot Chat only
 ./install.sh claude         # Claude Code CLI only
 ./install.sh --insiders     # use VS Code Insiders paths
-./install.sh --uninstall    # remove
+./install.sh --prefix DIR   # custom skill install root (default ~/.copilot/skills)
+./install.sh --uninstall    # remove installed launchers
 ```
 
-The script copies `SKILL.md`, `workflows/`, and `references/` into `~/.copilot/skills/codebase-audit/` (override with `--prefix`), then installs the slash-command launchers for each target.
+What the installer does:
+
+1. Copies `SKILL.md`, `workflows/`, and `references/` into `~/.copilot/skills/codebase-audit/` (override with `--prefix`). This is the **single source of truth** — both clients read from here.
+2. **Generates** launcher files with absolute paths baked in:
+   - Copilot: one prompt file at `<vscode-prompts-dir>/codebase-audit.prompt.md`
+   - Claude: `~/.claude/commands/codebase-audit.md` + `~/.claude/commands/codebase-audit/{recon,deploy,audit,fpcheck,verify,report}.md`
+
+Launchers are not stored in the repo — they're produced by `install.sh` heredocs so there is zero duplication of skill content.
 
 ## Usage
 
 ### GitHub Copilot Chat (VS Code)
 
-Copilot Chat does **not** support namespaced sub-commands (`/foo:bar`) — it can only autocomplete top-level slash commands from prompt files. So there is **one** slash command, and you specify the phase as an argument.
+Copilot Chat does **not** support namespaced sub-commands (`/foo:bar`) — it only autocompletes top-level slash commands from prompt files. So there is **one** slash command, and you specify the phase as an argument.
 
 After reloading the window, type:
 
@@ -54,23 +62,11 @@ Copilot will prompt you for a phase. Accepted values:
 | `report` | consolidated report + disclosure summary |
 | *(blank or `full`)* | run all phases in order, gating between each |
 
-You can also type the phase inline:
-
-```
-/codebase-audit audit
-```
-
-Or trigger by free-text phrase:
-
-```
-audit this app
-find vulnerabilities in this project
-run the codebase audit recon phase
-```
+You can also type the phase inline (`/codebase-audit audit`) or trigger by free-text phrase (*"audit this app"*, *"find vulnerabilities in this project"*).
 
 ### Claude Code CLI
 
-Claude Code natively supports namespaced sub-commands via subdirectories under `~/.claude/commands/`. After install, all of these work as autocompleting slash commands:
+Claude Code natively supports namespaced sub-commands via subdirectories under `~/.claude/commands/`. All of these autocomplete:
 
 | Slash command | Phase |
 |---|---|
@@ -91,47 +87,37 @@ All sub-commands accept `$ARGUMENTS` for optional notes (`/codebase-audit:audit 
 | Slash-command surface | One: `/codebase-audit` (phase as argument) | Seven: `/codebase-audit[:phase]` |
 | Sub-command autocomplete | ❌ not supported | ✅ via `commands/<name>/<sub>.md` |
 | Argument passing | `${input:phase:...}` prompt or inline | `$ARGUMENTS` substitution |
-| Prompt file location | `~/.vscode-server/data/User/prompts/` (Linux/remote), `~/Library/Application Support/Code/User/prompts/` (macOS), `%APPDATA%/Code/User/prompts/` (Windows) | `~/.claude/commands/` |
+| Launcher install location | `~/.vscode-server/data/User/prompts/` (Linux/remote), `~/Library/Application Support/Code/User/prompts/` (macOS), `%APPDATA%/Code/User/prompts/` (Windows) | `~/.claude/commands/` |
 | Reload required after install | ✅ Developer: Reload Window | ❌ picked up automatically |
 | Free-text trigger phrases | ✅ via skill `description` frontmatter | ❌ slash commands only |
-| File-reference syntax in prompts | `[label](path)` markdown links | `@path/to/file` |
+| File-reference syntax | `[label](path)` markdown links | `@absolute/path` |
 
-Both clients share the same `SKILL.md`, `workflows/`, and `references/` content — the only target-specific files are the launchers in `prompts/` (Copilot) and `claude/commands/` (Claude).
+Both clients share the same `SKILL.md`, `workflows/`, and `references/` — the only target-specific bits are the launchers, which `install.sh` generates.
 
 ## Layout
 
 ```
 codebase-audit/
 ├── SKILL.md                    # entrypoint; sub-command router; lessons summary
-├── install.sh
 ├── README.md
-├── workflows/                  # one per phase
+├── install.sh                  # generates launchers from heredocs
+├── LICENSE
+├── workflows/                  # one per phase (single source of truth)
 │   ├── recon.md
 │   ├── deploy.md
 │   ├── audit.md
 │   ├── fpcheck.md
-│   ├── verify.md               # runs in a forked conversation
+│   ├── verify.md
 │   └── report.md
-├── references/                 # technical detail + templates
-│   ├── phase0-source-detection.md
-│   ├── phase2-feature-mapping.md
-│   ├── phase4-deep-audit.md
-│   ├── phase5-fp-check.md
-│   ├── phase6-report.md
-│   ├── resume-note-template.md
-│   ├── live-instance-template.md
-│   └── lessons-learned.md
-├── prompts/                    # Copilot Chat launcher
-│   └── codebase-audit.prompt.md
-└── claude/commands/            # Claude Code launchers
-    ├── codebase-audit.md
-    └── codebase-audit/
-        ├── recon.md
-        ├── deploy.md
-        ├── audit.md
-        ├── fpcheck.md
-        ├── verify.md
-        └── report.md
+└── references/
+    ├── phase0-source-detection.md
+    ├── phase2-feature-mapping.md
+    ├── phase4-deep-audit.md
+    ├── phase5-fp-check.md
+    ├── phase6-report.md
+    ├── resume-note-template.md
+    ├── live-instance-template.md
+    └── lessons-learned.md
 ```
 
 ## Key design choices
@@ -141,12 +127,13 @@ codebase-audit/
 - **`general-purpose` subagents only** for write-needed work — `Explore` agents are read-only and silently produce no artifacts (a real-audit lesson).
 - **FP-check is static, verify is live** — separated so "I couldn't reproduce" handwaves don't kill real source-level bugs.
 - **Patch-bypass mining** — for every prior CVE, fetch the patch diff and check sibling files for the same root cause untouched. Highest-value class in practice.
+- **No launcher duplication** — `install.sh` generates Copilot prompts and Claude commands from inline templates with absolute paths baked in. The repo holds workflows/SKILL.md exactly once.
 
 ## Requirements
 
 - VS Code with GitHub Copilot Chat, and/or Claude Code CLI
 - A POSIX shell (`bash`) for install
-- For target audits: typically `sqlite3` available so the agent can query `audit.db`
+- Typically `sqlite3` for `audit.db` queries during audits
 
 ## License
 
