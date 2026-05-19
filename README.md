@@ -44,7 +44,7 @@ For each true positive: build the PoC against the documented base URL, capture f
 Each fork covers ~5–8 findings so HTTP noise doesn't bloat the orchestrator's context. The command **requires** a finding-ID list and refuses to run without one — artifact consolidation happens in [`report`](workflows/report.md), not here.
 
 ### 6. [`report`](workflows/report.md) — consolidated final report
-Stitches every `verify-<id>.md` + FP verdict into:
+**Step 1 ingests every `verify-<id>.md` from disk** and reconciles them against the TP list in `cba_fp_verdicts`. If any TP is missing an artifact (and the user hasn't explicitly skipped it), the workflow **stops at a user gate** and prints a ready-to-paste fork prompt for the missing IDs — you can't accidentally write a report with un-verified TPs. Once the inventory is complete, it stitches everything into:
 - `report.md` — full audit report with verified findings ordered by severity
 - `disclosure-summary.md` — short vendor-facing summary suitable for an advisory
 
@@ -72,6 +72,14 @@ Includes a coverage matrix (every group, every CVE, every finding) and a section
    In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts directly to `reports/audit-<timestamp>/artifacts/`. **You don't need to paste anything back to the orchestrator.** The verify command refuses to run without IDs — there is no "orchestrator verify" mode.
 
 7. **Report** — once all forks have written their artifacts, run `/codebase-audit:report` on the orchestrator. Its first step ingests every `verify-<id>.md` from disk, reconciles against the TP list, and **refuses to continue if any TP is missing an artifact** (it will surface the missing IDs and offer a ready-to-paste fork prompt). When the inventory is complete, it writes `report.md` + `disclosure-summary.md` and stops at a user gate before any disclosure.
+
+### Checking verify progress mid-flight
+
+There is no dedicated "verify status" command — just ask the orchestrator in plain English, e.g.:
+
+> *"How many verify forks have finished? Which TPs still need a fork?"*
+
+The orchestrator will `ls reports/audit-*/artifacts/verify-*.md`, query the TPs from `cba_fp_verdicts`, and answer with a status table. If you'd rather get the same answer as a hard gate, just run `/codebase-audit:report` — it will print the MISSING list and stop before doing any work if any TP is unverified.
 
 7. **Report** (`/codebase-audit:report` or `report`).
    Stitches everything into `report.md` + `disclosure-summary.md`. Done.
