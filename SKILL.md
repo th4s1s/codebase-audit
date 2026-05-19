@@ -6,9 +6,12 @@ description: >-
   false-positive verification, and per-finding live PoC verification. Supports
   source code, IDA Pro MCP (binary reverse engineering), or both. Triggers on
   'audit this app', 'security audit this codebase', 'find vulnerabilities in
-  this project', 'run the codebase audit', or any sub-command like
-  '/codebase-audit:recon', '/codebase-audit:deploy', '/codebase-audit:audit',
-  '/codebase-audit:fpcheck', '/codebase-audit:verify', '/codebase-audit:report'.
+  this project', 'run the codebase audit', '/codebase-audit', or any phase
+  reference like 'run the recon phase' / 'run the fpcheck phase'. On Claude
+  Code CLI also triggers on '/codebase-audit:recon', '/codebase-audit:deploy',
+  '/codebase-audit:audit', '/codebase-audit:fpcheck', '/codebase-audit:verify',
+  '/codebase-audit:report' (Copilot Chat does not support namespaced slash
+  commands — pass the phase as an argument to /codebase-audit instead).
   NOT for single-file review (use code-reviewer), quick scans (use semgrep),
   or differential review of a PR (use differential-review).
 ---
@@ -35,18 +38,28 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 ## Sub-Command Router
 
-The skill supports six entry points. User can invoke them individually after the prior phase is complete, or run the full pipeline by saying "audit this app".
+The skill supports six phases. User can invoke them individually after the prior phase is complete, or run the full pipeline.
 
-| Sub-command | Workflow file | Purpose | Entry condition | Output |
+### Phase → workflow mapping
+
+| Phase | Workflow file | Purpose | Entry condition | Output |
 |---|---|---|---|---|
-| `/codebase-audit:recon` | [workflows/recon.md](workflows/recon.md) | Source detection, reconnaissance, **parallel feature mapping**, write resume note | Fresh start (or new target) | `cba_feature_groups`, `cba_attack_surface`, `cba_security_observations` populated; `files/G<n>-mapping.md` per group; resume note ready for compact |
-| `/codebase-audit:deploy` | [workflows/deploy.md](workflows/deploy.md) | Deploy live instance from source (Docker, build artifact, or local run); document in `/memories/repo/<project>-live-instance.md` | Recon done OR independent setup task | Live instance running; endpoints documented; live-instance note saved to repo memory |
-| `/codebase-audit:audit` | [workflows/audit.md](workflows/audit.md) | Load prior CVEs/advisories (find patch-bypass surfaces), **parallel deep-audit subagents** per group, write resume note | Recon + deploy done | `cba_known_findings`, `cba_findings` populated; per-group `artifacts/G<n>-findings.md`; resume note updated |
-| `/codebase-audit:fpcheck` | [workflows/fpcheck.md](workflows/fpcheck.md) | **Parallel FP-check subagents** apply Hard Exclusions / Precedent rules / Marginal Gain Test — **static review only**, no live testing; write resume note | Audit done | `cba_fp_verdicts` populated; per-batch `artifacts/phase5-batch<X>.md`; resume note updated |
-| `/codebase-audit:verify` | [workflows/verify.md](workflows/verify.md) | **Run in a forked conversation** — per-finding live-instance PoC against the deployed target; writes `artifacts/verify-<finding-id>.md` | FP-check produced TPs; user has opened a fork | One verify artifact per finding in scope; CONFIRMED/REFUTED/INCONCLUSIVE status |
-| `/codebase-audit:report` | [workflows/report.md](workflows/report.md) | Stitch all verify artifacts + FP verdicts into consolidated `report.md` and `disclosure-summary.md` | All verify forks finished | Final report under `reports/audit-<timestamp>/` |
+| `recon` | [workflows/recon.md](workflows/recon.md) | Source detection, reconnaissance, **parallel feature mapping**, write resume note | Fresh start (or new target) | `cba_feature_groups`, `cba_attack_surface`, `cba_security_observations` populated; `files/G<n>-mapping.md` per group; resume note ready for compact |
+| `deploy` | [workflows/deploy.md](workflows/deploy.md) | Deploy live instance from source (Docker, build artifact, or local run); document in `/memories/repo/<project>-live-instance.md` | Recon done OR independent setup task | Live instance running; endpoints documented; live-instance note saved to repo memory |
+| `audit` | [workflows/audit.md](workflows/audit.md) | Load prior CVEs/advisories (find patch-bypass surfaces), **parallel deep-audit subagents** per group, write resume note | Recon + deploy done | `cba_known_findings`, `cba_findings` populated; per-group `artifacts/G<n>-findings.md`; resume note updated |
+| `fpcheck` | [workflows/fpcheck.md](workflows/fpcheck.md) | **Parallel FP-check subagents** apply Hard Exclusions / Precedent rules / Marginal Gain Test — **static review only**, no live testing; write resume note | Audit done | `cba_fp_verdicts` populated; per-batch `artifacts/phase5-batch<X>.md`; resume note updated |
+| `verify` | [workflows/verify.md](workflows/verify.md) | **Run in a forked conversation** — per-finding live-instance PoC against the deployed target; writes `artifacts/verify-<finding-id>.md` | FP-check produced TPs; user has opened a fork | One verify artifact per finding in scope; CONFIRMED/REFUTED/INCONCLUSIVE status |
+| `report` | [workflows/report.md](workflows/report.md) | Stitch all verify artifacts + FP verdicts into consolidated `report.md` and `disclosure-summary.md` | All verify forks finished | Final report under `reports/audit-<timestamp>/` |
 
-**Full pipeline mode** (no sub-command): orchestrator runs recon → deploy → audit → fpcheck → user opens forks → report. Each transition is gated.
+**Full pipeline mode**: orchestrator runs recon → deploy → audit → fpcheck → user opens forks → report. Each transition is gated.
+
+### How phases are invoked per client
+
+| Client | Full pipeline | Specific phase |
+|---|---|---|
+| **GitHub Copilot Chat** (VS Code) | `/codebase-audit` (leave phase prompt blank) | `/codebase-audit` then answer with `recon` / `deploy` / `audit` / `fpcheck` / `verify` / `report` — Copilot does NOT support namespaced slash commands, so phase is an argument |
+| **Claude Code CLI** | `/codebase-audit` | `/codebase-audit:recon`, `/codebase-audit:deploy`, `/codebase-audit:audit`, `/codebase-audit:fpcheck`, `/codebase-audit:verify <ids>`, `/codebase-audit:report` |
+| **Free-text** (either) | "audit this app" | "run the codebase-audit recon phase" |
 
 ## When to Use
 

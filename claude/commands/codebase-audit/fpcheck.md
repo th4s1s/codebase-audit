@@ -1,11 +1,13 @@
 ---
-mode: 'agent'
-description: 'Codebase audit — Phase 4: static-only false-positive review of findings.'
+description: "Codebase audit — Phase 4: static-only false-positive review of findings."
+argument-hint: "[optional: batch size or notes]"
 ---
 
 Run the **fpcheck** phase of the codebase-audit skill.
 
-Read [SKILL.md](../SKILL.md) and the resume note, then execute [workflows/fpcheck.md](../workflows/fpcheck.md).
+Optional user note: $ARGUMENTS
+
+Read @SKILL.md and the resume note, then execute @workflows/fpcheck.md.
 
 Key reminders:
 - **STATIC ONLY** — do not touch the live instance; live verification is a separate phase

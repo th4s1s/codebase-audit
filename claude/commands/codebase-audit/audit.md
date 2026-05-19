@@ -1,11 +1,13 @@
 ---
-mode: 'agent'
-description: 'Codebase audit — Phase 3: CVE ingest, patch-bypass mining, parallel deep audit.'
+description: "Codebase audit — Phase 3: CVE ingest, patch-bypass mining, parallel deep audit."
+argument-hint: "[optional: focus groups or notes]"
 ---
 
 Run the **audit** phase of the codebase-audit skill.
 
-Read [SKILL.md](../SKILL.md), the resume note, and the live-instance note. Then execute [workflows/audit.md](../workflows/audit.md).
+Optional user note: $ARGUMENTS
+
+Read @SKILL.md, the resume note, and the live-instance note. Then execute @workflows/audit.md.
 
 Key reminders:
 - Use `general-purpose` subagents, NOT `Explore` (Explore is read-only — will silently fail)

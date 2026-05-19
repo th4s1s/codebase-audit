@@ -1,11 +1,13 @@
 ---
-mode: 'agent'
-description: 'Codebase audit — Phase 1: source detection, reconnaissance, parallel feature mapping.'
+description: "Codebase audit — Phase 1: source detection, reconnaissance, parallel feature mapping."
+argument-hint: "[optional: target path or notes]"
 ---
 
 Run the **recon** phase of the codebase-audit skill.
 
-Read [SKILL.md](../SKILL.md) for context, then execute [workflows/recon.md](../workflows/recon.md) end-to-end.
+Optional user note: $ARGUMENTS
+
+Read @SKILL.md for context, then execute @workflows/recon.md end-to-end.
 
 Outputs expected:
 - `reports/audit-<TS>/audit.db` with `cba_sources`, `cba_feature_groups`, `cba_attack_surface`, `cba_security_observations` populated
