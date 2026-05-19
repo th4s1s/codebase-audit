@@ -55,8 +55,11 @@ If a finding requires a capability marked **no**, the verify fork should mark it
 Expected exit code 0 and/or HTTP `<status>`.
 
 ## Off-limits surface  *(external-provided — what NOT to hit)*
-- <method + path patterns the operator forbids, e.g. "any POST/DELETE under /admin/*">
-- <data the operator considers sensitive — exclude from PoCs / logs>
+
+List method+path patterns the operator forbids broadly. **If there are no restrictions, write `none — all reachable surface is fair game`** — do NOT leave the bullets below as if they were defaults.
+
+- <e.g. "any POST/DELETE under /admin/*">
+- <e.g. "data the operator considers sensitive — exclude from PoCs / logs">
 
 ## Credentials inventory  *(external-provided)*
 
@@ -64,14 +67,14 @@ One row per identity the operator has granted. **The secret value itself MUST li
 
 | Role / tier | Auth scheme | Header / param | Env var holding secret | Can create accounts? | Can rotate? | Notes |
 |---|---|---|---|---|---|---|
-| anonymous | none | n/a | n/a | n/a | n/a | baseline |
-| tenant-user | bearer | `Authorization: Bearer <token>` | `AUDIT_USER_TOKEN` | no | no | tenant `acme-test` |
-| tenant-admin | bearer | `Authorization: Bearer <token>` | `AUDIT_ADMIN_TOKEN` | **yes** — may provision sub-users for permission-boundary testing | no | tenant `acme-test` only |
-| service-account | api-key | `X-API-Key: <key>` | `AUDIT_SVC_KEY` | no | yes | scoped to read-only |
+| <e.g. tenant-user> | <e.g. bearer> | <e.g. `Authorization: Bearer <token>`> | <e.g. `AUDIT_USER_TOKEN`> | <yes/no> | <yes/no> | <free text> |
 
-If no credentials were supplied, write a single row "**none — anonymous-only audit**" and add a callout: *the final report must flag that authenticated/admin-only flaws were not assessed*.
+If no credentials were supplied, replace the table with a single line: **`none — anonymous-only audit`** and add a callout: *the final report must flag that authenticated/admin-only flaws were not assessed*.
 
 ## Tenant / scope boundaries  *(external-provided)*
+
+**If the system is not multi-tenant, or the operator has not specified any boundaries, write `none — no scope restrictions`.** Otherwise:
+
 - **Owned by the agent (safe to fully exercise):** <tenant/org/project IDs>
 - **Do NOT cross into:** <list of other tenants/orgs/users visible to the agent's credentials>
   - If a finding allows cross-tenant impact, mark **INCONCLUSIVE — cross-tenant impact suspected, operator coordination required**; do NOT actually pivot.
@@ -80,21 +83,18 @@ If no credentials were supplied, write a single row "**none — anonymous-only a
 
 Concrete allow/deny entries beyond URL patterns. The agent's privilege level does NOT override these.
 
-- **Do NOT delete or modify:**
-  - account `ops@example.com` (the operator's other admin)
-  - bucket `prod_backups`
-  - any object under prefix `customer-data/*`
-- **Do NOT POST/PUT to:**
-  - `/billing/*` (real billing pipeline)
-  - `/webhooks/*` (fires external integrations)
-- **Do NOT trigger:**
-  - email sends to addresses other than `audit-sink+*@example.com`
-  - SMS / push notifications
-  - paid-tier feature toggles
+**If the operator has not designated any specific resources as off-limits, write `none — agent has full latitude within scope`.** Do NOT leave the bullets below populated with examples — they are illustrative only.
+
+- **Do NOT delete or modify:** <specific account IDs / buckets / objects / records>
+- **Do NOT POST/PUT to:** <specific paths beyond what "Off-limits surface" already covers>
+- **Do NOT trigger:** <e.g. real emails, SMS, paid feature toggles, external webhooks>
 
 If a PoC would need to touch any of the above, mark INCONCLUSIVE and document the required operator action.
 
 ## Rate limits / blast-radius caps  *(external-provided)*
+
+**If the operator has not specified caps, write `none — normal probing rates OK; clean up any created resources`.** Otherwise:
+
 - Max sustained request rate: `<N req/sec>`
 - Bulk-create cap: `<e.g. up to 50 throwaway users per audit; tag with prefix audit-fork->`
 - Bulk-create cleanup: `<who/when cleans them up; or operator does>`
@@ -102,10 +102,12 @@ If a PoC would need to touch any of the above, mark INCONCLUSIVE and document th
 - Quiet-hours requested: `<e.g. no probes 09:00–18:00 UTC>`
 
 ## Seed test data  *(external-provided)*
-- Known-good IDs / tokens / uploads pre-staged by the operator:
-  - `<resource type>`: `<ID>` — <purpose>
-  - …
-- Use these in preference to creating new state, when applicable.
+
+**If the operator has not pre-staged any test data, write `none — agent will create its own state as needed (tagged for cleanup)`.** Otherwise list known-good IDs / tokens / uploads pre-staged by the operator:
+- `<resource type>`: `<ID>` — <purpose>
+- …
+
+Use these in preference to creating new state, when applicable.
 
 ## Config (bind-mounted; edits may hot-reload)  *(local-managed only)*
 - `<path>/config.yaml` — server config; auto-reload: yes/no
@@ -155,7 +157,7 @@ docker compose down                        # full stop
 3. **Endpoint table is the most-read section after mode/capabilities.** Use full base URLs (`scheme://host:port`); never hardcode `127.0.0.1` unless the instance truly is local. A remote-host finding tested against `127.0.0.1` is a silent false negative.
 4. **Document every deviation from upstream** (`local-managed`) — others will fail to reproduce without this list.
 5. **Keep secrets OUT of this note.** Real credentials/tokens go in env vars; the note records only env-var names + roles + usage. This file lands in git-tracked / shareable memory.
-6. **Off-limits resources override privilege.** Even with admin credentials, the agent must respect the deny-list — "I had permission" is not a defense for touching another admin's account or shared infrastructure.
-7. **No credentials → explicitly record it.** If the operator gave only a URL, write "none — anonymous-only audit" in the credentials section so the final report can flag the coverage gap.
+6. **Off-limits sections must be explicitly populated.** Every off-limits / boundary / cap section either lists the actual restriction OR says `none — ...` in plain words. Never leave the template's illustrative bullets in place — forks will read them as real deny entries. Default posture is "agent is free to test"; restrictions only exist where you write them.
+7. **Off-limits overrides privilege.** Where restrictions ARE listed, even an admin credential does not override them — "I had permission" is not a defense.
 8. **Update the "Verified working" date** when you re-test reachability.
 9. **Append to the hand-edit log** whenever you modify a bind-mounted config (`local-managed`) or coordinate an operator change (`external-provided`) — even temporarily — so verify forks know what state they're inheriting.
