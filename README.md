@@ -26,17 +26,17 @@ cd codebase-audit
 ./install.sh claude         # Claude Code CLI only
 ./install.sh --insiders     # use VS Code Insiders paths
 ./install.sh --prefix DIR   # custom skill install root (default ~/.copilot/skills)
-./install.sh --uninstall    # remove installed launchers
+./install.sh --uninstall    # remove installed launcher files
 ```
 
 What the installer does:
 
 1. Copies `SKILL.md`, `workflows/`, and `references/` into `~/.copilot/skills/codebase-audit/` (override with `--prefix`). This is the **single source of truth** — both clients read from here.
-2. **Generates** launcher files with absolute paths baked in:
-   - Copilot: one prompt file at `<vscode-prompts-dir>/codebase-audit.prompt.md`
-   - Claude: `~/.claude/commands/codebase-audit.md` + `~/.claude/commands/codebase-audit/{recon,deploy,audit,fpcheck,verify,report}.md`
+2. Copies launcher files into the right place, substituting `__SKILL_DIR__` with the actual install path:
+   - Copilot: `prompts/codebase-audit.prompt.md` → `<vscode-prompts-dir>/codebase-audit.prompt.md`
+   - Claude: `claude/commands/codebase-audit.md` → `~/.claude/commands/codebase-audit.md` and `claude/commands/codebase-audit/*.md` → `~/.claude/commands/codebase-audit/*.md`
 
-Launchers are not stored in the repo — they're produced by `install.sh` heredocs so there is zero duplication of skill content.
+Launchers are tiny routing stubs (~10 lines each) that point Claude/Copilot at `SKILL.md` and the matching `workflows/<phase>.md`. They contain no audit logic — that lives in `workflows/` exclusively.
 
 ## Usage
 
@@ -92,7 +92,7 @@ All sub-commands accept `$ARGUMENTS` for optional notes (`/codebase-audit:audit 
 | Free-text trigger phrases | ✅ via skill `description` frontmatter | ❌ slash commands only |
 | File-reference syntax | `[label](path)` markdown links | `@absolute/path` |
 
-Both clients share the same `SKILL.md`, `workflows/`, and `references/` — the only target-specific bits are the launchers, which `install.sh` generates.
+Both clients share the same `SKILL.md`, `workflows/`, and `references/` — the only target-specific files are the launcher templates in `prompts/` and `claude/commands/`.
 
 ## Layout
 
@@ -100,25 +100,40 @@ Both clients share the same `SKILL.md`, `workflows/`, and `references/` — the 
 codebase-audit/
 ├── SKILL.md                    # entrypoint; sub-command router; lessons summary
 ├── README.md
-├── install.sh                  # generates launchers from heredocs
+├── install.sh                  # copies launchers with __SKILL_DIR__ -> real path
 ├── LICENSE
-├── workflows/                  # one per phase (single source of truth)
+├── workflows/                  # one per phase (single source of truth for audit logic)
 │   ├── recon.md
 │   ├── deploy.md
 │   ├── audit.md
 │   ├── fpcheck.md
 │   ├── verify.md
 │   └── report.md
-└── references/
-    ├── phase0-source-detection.md
-    ├── phase2-feature-mapping.md
-    ├── phase4-deep-audit.md
-    ├── phase5-fp-check.md
-    ├── phase6-report.md
-    ├── resume-note-template.md
-    ├── live-instance-template.md
-    └── lessons-learned.md
+├── references/
+│   ├── phase0-source-detection.md
+│   ├── phase2-feature-mapping.md
+│   ├── phase4-deep-audit.md
+│   ├── phase5-fp-check.md
+│   ├── phase6-report.md
+│   ├── resume-note-template.md
+│   ├── live-instance-template.md
+│   └── lessons-learned.md
+├── prompts/                    # Copilot launcher template (uses __SKILL_DIR__)
+│   └── codebase-audit.prompt.md
+└── claude/commands/            # Claude launcher templates (use __SKILL_DIR__)
+    ├── codebase-audit.md
+    └── codebase-audit/
+        ├── recon.md
+        ├── deploy.md
+        ├── audit.md
+        ├── fpcheck.md
+        ├── verify.md
+        └── report.md
 ```
+
+## Customizing the launchers
+
+The launcher templates in `prompts/` and `claude/commands/` are tracked in git and free to edit. Every occurrence of the literal string `__SKILL_DIR__` is substituted at install time with the real `SKILL_DIR` (default `~/.copilot/skills/codebase-audit`, overridable with `--prefix`). After edits, re-run `./install.sh` to copy the updates into place.
 
 ## Key design choices
 
@@ -127,7 +142,7 @@ codebase-audit/
 - **`general-purpose` subagents only** for write-needed work — `Explore` agents are read-only and silently produce no artifacts (a real-audit lesson).
 - **FP-check is static, verify is live** — separated so "I couldn't reproduce" handwaves don't kill real source-level bugs.
 - **Patch-bypass mining** — for every prior CVE, fetch the patch diff and check sibling files for the same root cause untouched. Highest-value class in practice.
-- **No launcher duplication** — `install.sh` generates Copilot prompts and Claude commands from inline templates with absolute paths baked in. The repo holds workflows/SKILL.md exactly once.
+- **No content duplication** — launchers are tiny routing stubs; the audit logic lives only in `workflows/` and `SKILL.md`.
 
 ## Requirements
 
