@@ -22,7 +22,7 @@ Do not attempt to guess intent. Do not run any PoC. Do not scan artifacts. Wait 
 You are a fork. Do these reads first (parallel):
 
 1. `/memories/session/<project>-audit-resume.md` — current pipeline state, what's TP, fork inventory, live-instance pointer
-2. `/memories/repo/<project>-live-instance.md` — **deployment mode, capabilities, base URLs, liveness command**, bind-mounted config, hand-edit log
+2. `/memories/repo/<project>-live-instance.md` — **deployment mode, capabilities, base URLs, liveness command**, bind-mounted config, hand-edit log, **credentials inventory, tenant/scope boundaries, off-limits resources, rate-limit caps, seed test data** (external-provided)
 3. Each in-scope finding's section in `reports/audit-<timestamp>/artifacts/G<n>-findings.md`
 4. The corresponding FP-check verdict reason from `cba_fp_verdicts` (verifies the FP-check was satisfied this is a real bug, so any "can't reproduce" outcome is suspicious)
 
@@ -41,6 +41,11 @@ The `Capabilities` table in the live-instance note is authoritative. For `extern
 - **No config backup / edit / restart.** Skip Steps 1b, 1c, 1f for those findings. If a finding **requires** a config change, mark it **INCONCLUSIVE** with status note `requires operator-coordinated change: <what>` — do NOT attempt a local-loopback substitute.
 - **No filesystem access.** Treat the target purely as an HTTP black box.
 - **Respect the "Off-limits surface" list** in the note — skip any finding whose PoC would hit a forbidden path/method, mark INCONCLUSIVE with reason `operator forbids hitting <surface>`.
+- **Respect the "Off-limits resources" list.** Even if your credentials would allow it, do NOT delete/modify other admin accounts, other tenants' data, billing/webhook endpoints, or any specific resource in the deny-list. Mark INCONCLUSIVE with reason `would touch off-limits resource: <id>`.
+- **Respect tenant / scope boundaries.** Stay inside the tenant(s) the agent owns. If a PoC requires pivoting into another tenant to demonstrate impact, stop at the boundary and mark **INCONCLUSIVE — cross-tenant impact suspected, operator coordination required** with a description of what would happen if executed.
+- **Respect rate-limit / blast-radius caps.** Throttle to the documented max req/sec; cap bulk-create probes at the documented limit; tag all created throwaway resources with a recognizable prefix (e.g. `audit-fork-G1-F2-…`) so the operator can clean them up. If the cap blocks the PoC, mark INCONCLUSIVE with reason `cap exceeded: <what>`.
+- **Use seed test data when available** rather than creating new state.
+- **Pull credentials from the documented env vars** (`Credentials inventory` section). Never paste tokens into artifacts; reference the env var name instead. If `can-rotate=no`, treat the credential as scarce — avoid actions that could lock you out (password change, MFA enrollment, etc.).
 
 If the live instance is **not reachable** and mode is `local-managed`, bring it up using the documented `Common ops` commands. If it is not reachable and mode is `external-provided`, stop — return to the user with the unreachable status; do NOT attempt to restart or redeploy. The user must coordinate with the operator.
 

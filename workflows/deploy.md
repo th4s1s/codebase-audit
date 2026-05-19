@@ -18,13 +18,25 @@ Before touching anything, decide which mode applies. Ask the user explicitly if 
 
 If a `/memories/repo/<project>-live-instance.md` already exists, read it first — it tells you the mode and target. If the documented instance is still reachable (probe per Step 3), skip directly to Step 5.
 
-For **`external-provided`**, collect from the user (do not assume defaults):
+For **`external-provided`**, collect from the user (do not assume defaults). The richer this picture is, the wider the attack surface verify forks can legitimately probe — do NOT settle for just a URL:
 
 - **Base URL(s)** (e.g. `https://audit.example.com`, `http://10.0.5.12:8080`) — one per logical endpoint (proxy, admin/API, metrics, etc.)
-- **Auth material** the auditor may use (test accounts, sample tokens, header overrides) — placeholder/sample only, never real production secrets
-- **What's off-limits** — paths/methods the operator does not want hit (e.g. write endpoints, admin destructive routes)
+- **Credentials** — one row per usable identity. Ask the user to provide as many privilege tiers as they're willing to grant; if they only give a low-priv account, mention that admin-only flaws will be untestable. Capture for each:
+  - role / privilege tier (e.g. `anonymous`, `tenant-user`, `tenant-admin`, `superadmin`, `service-account`)
+  - how to authenticate (basic auth, bearer token, OAuth flow, API key header, session cookie — include the exact header/param name)
+  - the secret value itself **goes in an env var the agent can read**, not in the live-instance note (the note records only the env var name + role + how to use it)
+  - whether the agent is allowed to **create new accounts** with this identity (e.g. "the admin token may provision sub-tenant users for permission-boundary testing") — this is often the difference between testing 3 flaws and 30
+  - whether the agent is allowed to **rotate / reset** the credential
+- **Tenant / org / project scope** — if the system is multi-tenant, which tenant(s) the agent owns. Verify forks must NOT cross into other tenants even if the bug allows it; that becomes an INCONCLUSIVE "cross-tenant impact suspected, operator coordination required".
+- **Off-limits resources (not just paths)** — specific account IDs, tenants, data records, files, queues, topics, etc. the agent must not touch with **any** verb. Example: "the agent has admin credentials, but must NEVER delete/modify the OTHER admin account `ops@example.com`, must NEVER drop the `prod_backups` bucket, must NEVER POST to `/billing/*`". Capture as a concrete allow-list/deny-list, not vague guidance.
+- **Off-limits paths / methods** — method+path patterns the operator forbids broadly (e.g. "any DELETE under `/admin/*`").
+- **Rate limits / blast-radius caps** — max requests/sec the agent may sustain; whether bulk-create probes (e.g. "create 200 throwaway users to test enumeration") are OK and up to what cap.
+- **Sample / seed test data** — known-good IDs, tokens, file uploads, etc. the operator has pre-staged for the audit (saves the agent from creating new state that may persist).
 - **Liveness check command** the operator considers authoritative (might be just `curl -f <base-url>/health`, might be something else — do not assume `/health` or `127.0.0.1`)
-- **Restart/redeploy contact** — who to ping if the instance goes down (so we never assume `docker compose restart` works)
+- **Restart/redeploy contact** — who to ping if the instance goes down (so we never assume `docker compose restart` works), and the SLA for getting it back up (affects whether forks should serialize destructive PoCs)
+- **Disclosure of monitoring** — whether the operator has WAF/IDS in place that may rate-limit or ban the agent's IP; whether the operator wants prior notice before noisy probes
+
+If the user gives only a URL and nothing else, push back: confirm explicitly that you should proceed with anonymous-only testing (drastically reduced coverage) and record "no credentials supplied" in the live-instance note so the gap is visible in the final report.
 
 For **`local-managed`**, proceed to Step 1.
 
@@ -84,6 +96,11 @@ Required sections (mark sections N/A rather than deleting them if the mode doesn
 - Stack (compose file location, service names, restart policies) — N/A for external-provided
 - **All endpoints as full base URLs and what they serve** — proxy, admin/API, metrics, tracing UI, etc. Do not assume `127.0.0.1`; use whatever scheme/host/port the instance actually exposes.
 - **Liveness check command** (exact command verify forks should run to confirm the instance is up)
+- **Credentials inventory** (external-provided) — one row per identity: role, auth scheme + header/param name, env-var-name holding the secret, can-create-accounts (yes/no), can-rotate (yes/no). Real secrets stay in env vars, not the note.
+- **Tenant / scope boundaries** (external-provided) — which tenant/org/project IDs the agent owns; explicit "do not cross into" list.
+- **Off-limits resources** (external-provided) — specific account IDs, tenants, records, buckets, queues, etc. the agent must not touch with any verb. Allow-list/deny-list form.
+- **Rate limits / blast-radius caps** (external-provided) — max req/sec, bulk-create caps, monitoring/WAF disclosures.
+- **Seed test data** (external-provided) — known-good IDs/tokens/uploads pre-staged by the operator.
 - Bind-mounted config files (local-managed only — list what testers may edit / restore)
 - **Changes made vs upstream** (local-managed only — for reproducibility)
 - **Off-limits surface** (external-provided — paths/methods the operator forbids hitting)
@@ -124,6 +141,9 @@ If mode is `external-provided`, explicitly call out in the gate message that any
 - **`local-managed`: don't deploy to a public host or shared port.** Default to `127.0.0.1`.
 - **`external-provided`: never assume the instance is local.** Don't substitute `127.0.0.1` for a remote host in any probe, PoC, or backup command — the loopback probe will appear to succeed against an unrelated service on your own machine and silently invalidate the entire phase.
 - **`external-provided`: never run lifecycle commands.** No `docker compose ...`, no `systemctl restart`, no kill/send-signal. If a finding needs a restart, mark INCONCLUSIVE and document the required operator action.
+- **`external-provided`: never use a higher-privilege credential to destroy state that doesn't belong to the agent.** Even if the agent has an admin token, the off-limits-resources list is authoritative — don't delete/modify other admin accounts, other tenants' data, or shared infrastructure. "I had the permission to do it" is not a defense.
+- **`external-provided`: don't burn a granted credential by treating it as disposable.** If the user gives a single admin token and `can-rotate=no`, do not log it in artifacts or commit it anywhere; treat it as scarce.
+- **`external-provided`: don't proceed silently with only a URL.** If the user supplied no credentials, no scope, no off-limits list — stop, confirm explicitly that the audit is anonymous-only, and record the gap in the live-instance note so the final report flags the coverage limit.
 - **Don't invent liveness paths.** `/health` may 404 or may be a sensitive admin path. Use the operator-supplied liveness command verbatim (`external-provided`) or the one documented by the project (`local-managed`).
 - **Don't enable destructive admin features.** Keep test fixtures minimal.
 - **Don't bake real secrets into the instance.** Use placeholder/sample credentials so PoCs can be shared.
