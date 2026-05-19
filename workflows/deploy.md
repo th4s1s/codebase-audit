@@ -28,8 +28,8 @@ For **`external-provided`**, collect from the user (do not assume defaults). The
   - whether the agent is allowed to **create new accounts** with this identity (e.g. "the admin token may provision sub-tenant users for permission-boundary testing") — this is often the difference between testing 3 flaws and 30
   - whether the agent is allowed to **rotate / reset** the credential
 - **Tenant / org / project scope** — if the system is multi-tenant, which tenant(s) the agent owns. Verify forks must NOT cross into other tenants even if the bug allows it; that becomes an INCONCLUSIVE "cross-tenant impact suspected, operator coordination required".
-- **Off-limits resources (not just paths)** — specific account IDs, tenants, data records, files, queues, topics, etc. the agent must not touch with **any** verb. Example: "the agent has admin credentials, but must NEVER delete/modify the OTHER admin account `ops@example.com`, must NEVER drop the `prod_backups` bucket, must NEVER POST to `/billing/*`". Capture as a concrete allow-list/deny-list, not vague guidance.
-- **Off-limits paths / methods** — method+path patterns the operator forbids broadly (e.g. "any DELETE under `/admin/*`").
+- **Off-limits resources (not just paths)** — specific resources the agent must not touch with **any** verb, beyond what URL patterns alone capture (e.g. specific account IDs, tenants, records, buckets, queues — whatever applies to this system). Capture as a concrete deny-list, not vague guidance. **If the user has no such restrictions, record `none — agent has full latitude within scope`** — do NOT seed the note with illustrative examples; the agent will read them as real deny entries.
+- **Off-limits paths / methods** — method+path patterns the operator forbids broadly. If none, record `none — all reachable surface is fair game`.
 - **Rate limits / blast-radius caps** — max requests/sec the agent may sustain; whether bulk-create probes (e.g. "create 200 throwaway users to test enumeration") are OK and up to what cap.
 - **Sample / seed test data** — known-good IDs, tokens, file uploads, etc. the operator has pre-staged for the audit (saves the agent from creating new state that may persist).
 - **Liveness check command** the operator considers authoritative (might be just `curl -f <base-url>/health`, might be something else — do not assume `/health` or `127.0.0.1`)
@@ -37,6 +37,8 @@ For **`external-provided`**, collect from the user (do not assume defaults). The
 - **Disclosure of monitoring** — whether the operator has WAF/IDS in place that may rate-limit or ban the agent's IP; whether the operator wants prior notice before noisy probes
 
 If the user gives only a URL and nothing else, push back: confirm explicitly that you should proceed with anonymous-only testing (drastically reduced coverage) and record "no credentials supplied" in the live-instance note so the gap is visible in the final report.
+
+**Default posture is "agent is free to test" — restrictions only exist where the user explicitly lists them.** For every limit/scope category above where the user supplied nothing, write the explicit `none — ...` marker in the corresponding live-instance-note section (see [../references/live-instance-template.md](../references/live-instance-template.md)). Never copy the template's illustrative bullets through verbatim — a verify fork will read them as real deny entries.
 
 For **`local-managed`**, proceed to Step 1.
 
