@@ -60,7 +60,7 @@ The skill supports six phases. User can invoke them individually after the prior
 
 | Client | Full pipeline | Specific phase |
 |---|---|---|
-| **GitHub Copilot Chat** (VS Code) | `/codebase-audit` (leave phase prompt blank) | `/codebase-audit` then answer with `recon` / `deploy` / `audit` / `fpcheck` / `verify` / `report` — Copilot does NOT support namespaced slash commands, so phase is an argument |
+| **GitHub Copilot Chat** (VS Code) | `/codebase-audit` | `/codebase-audit recon` / `deploy` / `audit` / `fpcheck` / `verify <ids>` / `report` — Copilot does NOT support namespaced slash commands, so the phase is passed as a free-text argument after the slash command. The skill is auto-registered from `SKILL.md`; no separate prompt-launcher file is installed. |
 | **Claude Code CLI** | `/codebase-audit` | `/codebase-audit:recon`, `/codebase-audit:deploy`, `/codebase-audit:audit`, `/codebase-audit:fpcheck`, `/codebase-audit:verify <ids>`, `/codebase-audit:report` |
 | **Free-text** (either) | "audit this app" | "run the codebase-audit recon phase" |
 

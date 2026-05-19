@@ -54,7 +54,7 @@ Includes a coverage matrix (every group, every CVE, every finding) and a section
 
 1. **Open the target project's workspace** in VS Code (or `cd` into it for Claude CLI).
 2. **Start with recon**:
-   - Copilot: `/codebase-audit` → answer `recon`
+   - Copilot: `/codebase-audit` → type `recon`
    - Claude: `/codebase-audit:recon`
 
    The orchestrator detects source/IDA, proposes a feature-group split, asks you to confirm, then spawns mapping subagents in parallel. Output: `files/G<n>-mapping.md`, populated SQL tables, resume note.
@@ -109,16 +109,14 @@ Each client gets its **own self-contained copy** of the skill — installing one
 
 | Client | Skill content (`SKILL.md` + `workflows/` + `references/`) | Launcher(s) |
 |---|---|---|
-| **Copilot Chat** | `~/.copilot/skills/codebase-audit/` | `<vscode-prompts-dir>/codebase-audit.prompt.md` |
+| **Copilot Chat** | `~/.copilot/skills/codebase-audit/` | _none_ — newer Copilot Chat auto-registers `SKILL.md` as the `/codebase-audit` slash command. (Older installs dropped a `<vscode-prompts-dir>/codebase-audit.prompt.md` file; the installer removes it on every run to avoid a duplicate autocomplete entry.) |
 | **Claude Code CLI** | `~/.claude/skills/codebase-audit/` *(Claude auto-discovers via description triggers)* | `~/.claude/commands/codebase-audit.md` and `~/.claude/commands/codebase-audit/*.md` |
 
-VS Code prompts dir is auto-detected: `~/.vscode-server/data/User/prompts/` (Linux/remote), `~/Library/Application Support/Code/User/prompts/` (macOS), `%APPDATA%/Code/User/prompts/` (Windows).
+### How the Claude launchers find the skill
 
-### How the launchers find the skill
+Claude launcher files live in [`claude/commands/`](claude/commands/) as templates containing the literal string `__SKILL_DIR__`. `install.sh` `sed`-substitutes it with the **per-client** skill dir on copy:
 
-Launcher files live in [`prompts/`](prompts/) and [`claude/commands/`](claude/commands/) as templates containing the literal string `__SKILL_DIR__`. `install.sh` `sed`-substitutes it with the **per-client** skill dir on copy, so each set of launchers points at its own copy:
-
-- Copilot launchers → `/home/<user>/.copilot/skills/codebase-audit/...`
+- Copilot skill content → `/home/<user>/.copilot/skills/codebase-audit/...` (no launcher, auto-registered)
 - Claude launchers → `/home/<user>/.claude/skills/codebase-audit/...`
 
 This means you can `./install.sh claude` on a machine that has no VS Code, and nothing ever touches `~/.copilot/`.
