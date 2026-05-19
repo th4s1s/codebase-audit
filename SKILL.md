@@ -28,13 +28,15 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 3. **Memory-persistent across compactions**: Every major phase ends by **rewriting the audit resume note** (see `references/resume-note-template.md`). This single file lets the orchestrator survive arbitrary context compactions without losing state. SQLite (`audit.db`) holds the structured data; the resume note holds the working strategy.
 
-4. **Subagent agent type matters**: `Explore` agents are **read-only** — no terminal, no file writes. Use `general-purpose` for any subagent that must write artifacts, run SQL inserts, or hit the live instance. (Lesson learned the hard way — see `references/lessons-learned.md`.)
+4. **Manually compact between phases, never mid-phase**: Auto-compaction is unpredictable and frequently drops the exact reasoning/state the next phase needs (subagent outputs, dedup decisions, partial findings not yet flushed to SQL). At every user gate, **before saying "go" to the next phase**, run a manual compact (`/compact` in Claude Code, the Compact action in Copilot Chat). The phase you just finished has already written its artifacts to disk + a fresh resume note, so compacting at that boundary is lossless; compacting mid-phase is not.
 
-5. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** so curl/HTTP noise never bloats the orchestrator context. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report.
+5. **Subagent agent type matters**: `Explore` agents are **read-only** — no terminal, no file writes. Use `general-purpose` for any subagent that must write artifacts, run SQL inserts, or hit the live instance. (Lesson learned the hard way — see `references/lessons-learned.md`.)
 
-6. **User gates control pacing**: User explicitly approves transitions between phases. Never auto-advance past a gate.
+6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** so curl/HTTP noise never bloats the orchestrator context. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report.
 
-7. **FP-check is static-only**: FP-check subagents re-read source and apply 18 Hard Exclusions + 10 Precedent rules. They do NOT use the live instance — that is what verify forks are for. This separation prevents an "I couldn't reproduce it" handwave from killing a real source-level bug.
+7. **User gates control pacing**: User explicitly approves transitions between phases. Never auto-advance past a gate.
+
+8. **FP-check is static-only**: FP-check subagents re-read source and apply 18 Hard Exclusions + 10 Precedent rules. They do NOT use the live instance — that is what verify forks are for. This separation prevents an "I couldn't reproduce it" handwave from killing a real source-level bug.
 
 ## Sub-Command Router
 
@@ -150,6 +152,7 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 | "Use Explore agent for the subagents" | Use **general-purpose** — Explore is read-only and cannot write SQL/artifacts. |
 | "Verify in the main conversation to save tokens" | Forks isolate failure and noise. Always fork for verification. |
 | "Skip the resume note this phase, it's fine" | Compaction is unpredictable. Always rewrite the resume note at phase end. |
+| "Context is still big enough, don't bother compacting yet" | Manual compact at every gate. Letting auto-compaction fire mid-phase frequently drops the exact state the next phase needs. The cost of compacting too early is zero; the cost of compacting too late is a corrupted audit. |
 
 ## Lessons Learned (FROM REAL AUDITS — READ BEFORE STARTING)
 

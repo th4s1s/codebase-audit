@@ -106,6 +106,8 @@ Present:
 > Next: `/codebase-audit:audit` to ingest prior CVEs and run parallel deep audits.
 >
 > Say **go audit** to proceed.
+>
+> **Before continuing, run a manual compact** (`/compact` in Claude Code, Compact in Copilot Chat). The live-instance note is in repo memory and the resume note has been refreshed, so compacting now is lossless. The audit phase ingests CVEs + spawns one deep-audit subagent per group and will benefit from a clean context.
 
 If mode is `external-provided`, explicitly call out in the gate message that any finding requiring config changes, service restart, or filesystem access will be marked INCONCLUSIVE by verify forks unless the operator coordinates the change out-of-band.
 

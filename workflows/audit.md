@@ -143,6 +143,8 @@ Present:
 > Next: `/codebase-audit:fpcheck` for static false-positive elimination.
 >
 > Say **go fpcheck** to proceed.
+>
+> **Before continuing, run a manual compact** (`/compact` in Claude Code, Compact in Copilot Chat). All findings have been written to `cba_findings` + per-group artifacts, the resume note is fresh — compacting now is lossless. fpcheck spawns more subagents and will benefit from a clean context.
 
 ## Quality Checks
 

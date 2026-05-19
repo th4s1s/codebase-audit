@@ -76,6 +76,10 @@ Includes a coverage matrix (every group, every CVE, every finding) and a section
 
 At any point, context compaction is recoverable: every phase rewrites a resume note in `/memories/session/<project>-audit-resume.md`. A fresh orchestrator instance can read it and pick up exactly where the previous one left off.
 
+### Manually compact between phases
+
+**At every user gate, before saying "go" to the next phase, run a manual compact** (`/compact` in Claude Code CLI; the Compact action in Copilot Chat). The phase you just finished has already written its artifacts to disk and refreshed the resume note, so compacting at that boundary is lossless. Letting auto-compaction fire mid-phase is the most common cause of corrupted audits — it silently drops subagent outputs, dedup decisions, and partial findings that haven't been flushed to SQL yet. Compacting early costs nothing; compacting late costs the phase.
+
 ## Install
 
 ```bash

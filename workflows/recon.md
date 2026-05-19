@@ -96,6 +96,8 @@ Present:
 > Next: `/codebase-audit:deploy` to bring up a live instance for later PoC verification, or `/codebase-audit:audit` if you'll skip live testing.
 >
 > Say **go deploy**, **go audit**, or **adjust** to revise mappings.
+>
+> **Before continuing, run a manual compact** (`/compact` in Claude Code, Compact in Copilot Chat). The resume note + SQL state + per-group mapping artifacts are already on disk, so compacting now is lossless.
 
 Do NOT auto-advance.
 

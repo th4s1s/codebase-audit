@@ -106,6 +106,8 @@ Present:
 > Next: open M-ish forked conversations using the fork prompt in the resume note. Each fork covers ~5-8 findings and writes `artifacts/verify-<id>.md` per finding.
 >
 > When all forks finish: come back here and say **go report** for Phase 6.
+>
+> **Before opening verify forks, run a manual compact here** (`/compact` in Claude Code, Compact in Copilot Chat). The orchestrator will only need the FP verdicts + resume note to stitch the final report — everything else (per-finding source dives, dedup reasoning) is already on disk. Each verify fork starts in its own clean context anyway, so this compact is purely for the orchestrator.
 
 ## Quality Checks
 
