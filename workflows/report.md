@@ -2,27 +2,41 @@
 
 **Purpose**: Stitch FP-check verdicts + verify-fork artifacts into the consolidated `report.md` and a short vendor-facing `disclosure-summary.md`.
 
-**Entry**: All verify forks have finished (or have been explicitly skipped with documented reason).
+**Entry**: All verify forks have finished (or have been explicitly skipped with documented reason). Runs in the **main orchestrator**, never in a fork.
 **Exit**: `report.md` + `disclosure-summary.md` in the audit dir. User gate before any external disclosure.
 
 ---
 
-## Step 1 — Inventory verify artifacts
+## Step 1 — Ingest verify artifacts (mandatory, before anything else)
 
-```bash
-ls reports/audit-<timestamp>/artifacts/verify-*.md
-```
+This step is the canonical "orchestrator reads what the forks produced" — there is no separate ingest command. **You do not run any live-instance PoC here.**
 
-Parse each artifact's "Status" line. Build the inventory:
+1. Locate the active audit dir from the resume note (fallback: `ls -td reports/audit-* | head -1`).
+2. Glob the artifacts:
+   ```bash
+   ls -1 reports/audit-<timestamp>/artifacts/verify-*.md 2>/dev/null
+   ```
+3. For each artifact, parse the `Status:` line (CONFIRMED | REFUTED | INCONCLUSIVE), the `Severity adjustment:` line, and the one-sentence interpretation.
+4. Pull the canonical TP list:
+   ```sql
+   SELECT finding_id FROM cba_fp_verdicts WHERE verdict = 'TRUE_POSITIVE';
+   ```
+5. Reconcile artifacts ↔ TPs into this table:
 
-| finding_id | verify status | final severity | artifact |
-|---|---|---|---|
-| G1-F1 | CONFIRMED | HIGH | verify-G1-F1.md |
-| … | … | … | … |
+| finding_id | verify status | final severity | artifact | note |
+|---|---|---|---|---|
+| G1-F1 | CONFIRMED | HIGH | `verify-G1-F1.md` | Live PoC captured |
+| G1-F2 | INCONCLUSIVE (external) | MED | `verify-G1-F2.md` | Operator restart required |
+| G2-F5 | **MISSING** | n/a | _none_ | No fork has covered this TP |
+| … | … | … | … | … |
 
-If any TP from `cba_fp_verdicts` has no verify artifact AND no "infra-blocked" justification, ASK THE USER whether to:
-- Skip the finding (treat as source-only with a caveat in the report)
-- Open another fork to verify
+6. **Gate**: if any TP row is `MISSING` AND has no documented "infra-blocked" justification in the resume note, **STOP and ask the user**:
+   - Open another fork for the missing IDs (recommended), OR
+   - Explicitly skip (the finding will be tagged `(source-only — not live-verified)` in the report).
+
+   Provide a copy-pasteable fork prompt batching the missing IDs (~5–8 per fork) so the user can immediately open the next fork. Do **not** proceed to Step 2 until every TP has an artifact or an explicit skip decision.
+
+7. Refresh `/memories/session/<project>-audit-resume.md` with a "Verify status snapshot" section: CONFIRMED / REFUTED / INCONCLUSIVE / MISSING counts. Mark verify DONE only if MISSING is empty (or every MISSING is user-skipped).
 
 ## Step 2 — Drop REFUTED findings
 
