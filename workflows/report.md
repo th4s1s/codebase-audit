@@ -16,7 +16,7 @@ This step is the canonical "orchestrator reads what the forks produced" — ther
    ```bash
    ls -1 reports/audit-<timestamp>/artifacts/verify-*.md 2>/dev/null
    ```
-3. For each artifact, parse the `Status:` line (CONFIRMED | REFUTED | INCONCLUSIVE), the `Severity adjustment:` line, and the one-sentence interpretation.
+3. For each artifact, parse the `Status:` line (CONFIRMED | REFUTED | INCONCLUSIVE), the `Severity adjustment:` line, the one-sentence interpretation, and the **Adversarial review** outcome (note any finding the fork's fresh reviewers overturned or downgraded — those are already reflected in the Status/severity, don't reinstate them).
 4. Pull the canonical TP list:
    ```sql
    SELECT finding_id FROM cba_fp_verdicts WHERE verdict = 'TRUE_POSITIVE';
@@ -87,7 +87,7 @@ If the audit produced custom PoC scripts/patches, stage them in a single self-co
 
 ## Step 4b — Adversarial self-verification (before disclosure)
 
-Before the user gate, re-verify the report's claims against source + captured evidence — overstatement or a wrong citation in a bug-bounty submission is often disqualifying. For each finding, check three lenses (independent reviewers / subagents are ideal — they catch what the author's narrative misses):
+Each finding was already independently reviewed by fresh subagents in its verify fork (the **Adversarial review** section of `verify-<id>.md`); this pass is the orchestrator's lighter consolidation-time check — carry forward any DISPUTED/overturned outcome and don't reinstate a finding the fork's reviewers downgraded. Before the user gate, re-verify the report's claims against source + captured evidence — overstatement or a wrong citation in a bug-bounty submission is often disqualifying. For each finding, check three lenses (independent reviewers / subagents are ideal — they catch what the author's narrative misses):
 1. **Citations** — every `file:line`, quoted snippet, and constant matches the source at the audited commit.
 2. **Mechanism** — the root cause re-derives from scratch; the data flow actually reaches the sink.
 3. **Claims & severity** — every quantitative/behavioral claim is backed by the captured evidence, and the severity is not inflated.

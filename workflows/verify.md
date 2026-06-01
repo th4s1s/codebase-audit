@@ -1,6 +1,6 @@
 # `/codebase-audit:verify` — Per-Finding Live PoC (Runs in a FORK)
 
-**Purpose**: Reproduce true-positive findings against the deployed live instance. **This workflow runs in a forked conversation**, not the main orchestrator. The fork covers a small batch of findings (~5–8) and writes one artifact per finding.
+**Purpose**: Reproduce true-positive findings against the deployed live instance, then **adversarially review each one with fresh, unbiased subagents** before returning. **This workflow runs in a forked conversation**, not the main orchestrator. The fork covers a small batch of findings (~5–8), writes one artifact per finding, and re-tests its own conclusions (Step 2) so bias and intentionally-vulnerable/test code are caught before the report.
 
 **Entry**: You are a forked conversation. The user pasted a verify-fork prompt **or** ran `/codebase-audit:verify <comma-separated-ids>` (IDs are mandatory). The audit's main orchestrator is paused awaiting fork completion.
 **Exit**: One `verify-<finding-id>.md` artifact per in-scope finding. Return a summary table to the user (for their situational awareness — the orchestrator does NOT need it pasted back; `/codebase-audit:report` reads the artifacts directly from disk).
@@ -161,8 +161,13 @@ Save to **`reports/audit-<timestamp>/artifacts/verify-<finding-id>.md`** with th
 ## Interpretation
 <2-4 sentences: what the response shows, why it confirms/refutes/blocks the claim>
 
+## Adversarial review (fresh subagents — filled in Step 2)
+- Reviewers: <N> fresh subagents (angles: real-bug / valid-PoC / intentional-or-test-code)
+- Verdicts: <e.g. "3 UPHELD"> | <"2 UPHELD, 1 DISPUTED — re-examined, reviewers wrong because …"> | <"1 INTENTIONAL-OR-TEST-CODE — confirmed example/test code → Status set to REFUTED">
+- Outcome: <upheld unchanged | severity lowered X→Y | Status changed to REFUTED/INCONCLUSIVE> — <one-line>
+
 ## Severity adjustment
-<original-severity> → <final-severity>  (reason if changed)
+<original-severity> → <final-severity>  (reason if changed — including any change forced by the adversarial review)
 
 ## Draft remediation
 <1-3 sentences of code-level fix guidance, suitable for vendor disclosure>
@@ -172,11 +177,55 @@ Save to **`reports/audit-<timestamp>/artifacts/verify-<finding-id>.md`** with th
 - Live instance back to baseline: yes (verified via `<command>`)
 ```
 
-## Step 2 — Do NOT modify `cba_findings` or `cba_fp_verdicts`
+## Step 2 — Adversarial review of each finding (fresh, unbiased subagents)
+
+After you've written the `verify-<id>.md` PoC artifacts, **re-test your own conclusions with fresh reviewers before returning.** A reviewer subagent has none of this fork's context, so it cannot inherit your bias — the only bias risk is what you put in its prompt, so keep the prompt **neutral**: give it the code + the claim + the PoC, **never** your verdict, severity, or "confirmed".
+
+Do this for every **CONFIRMED** finding (and any **INCONCLUSIVE** one you're tempted to argue up). REFUTED findings need no review.
+
+### 2a. Spawn the reviewers
+
+For each finding, spawn **2–3 fresh `general-purpose` subagents in parallel**. Give each a distinct skeptical lens (perspective-diverse beats N identical reviewers):
+
+- **Reviewer 1 — "is the bug real?"** Re-derive the vulnerability from source independently; is the data flow genuine and reachable by the stated attacker, or does a guard / validation / type make it impossible?
+- **Reviewer 2 — "is the PoC valid?"** Does the captured evidence actually demonstrate the claimed impact on the **real, unmodified** target via the **genuine attacker path** — or is it a self-harness, a sanitizer abort, a debugger-injected state, or a missing control run? Does the impact match what's shown (no "infinite" / "RCE" / "always" beyond the evidence)?
+- **Reviewer 3 — "is this even a bug?"** Could the target be **intentionally-vulnerable or non-production** code — a CTF/wargame/training app, a test fixture, an example/demo, a deliberately-unsafe benchmark, or documented intended behavior? Does the attacker gain a *new, durable* capability, or is it self-healing / self-only / operator-misconfig / marginal (severity inflated)?
+
+Neutral prompt skeleton (fill per finding — **omit your own verdict/severity**):
+
+```
+You are an independent reviewer with NO prior context on this code or claim. Judge only what is below, and default to skepticism.
+
+Target: <repo @ commit>  ·  Component: <file(s)>
+Alleged issue: <one-line NEUTRAL statement of the claimed bug — no severity, no "confirmed">
+Code under review:
+<the cited source: pasted, or path + line range the reviewer can open>
+PoC and its captured output:
+<exact PoC script/commands + the captured evidence>
+
+From your assigned angle (<angle>), decide with evidence:
+1) Is the alleged issue a real defect reachable by the stated attacker?
+2) Does the PoC validly demonstrate the claimed IMPACT on the real, unmodified target via the genuine attacker path (not a harness / sanitizer / instrumented / debugger-forced artifact)?
+3) Could this be intentionally-vulnerable / test / example / benchmark code, or documented intended behavior?
+Return: verdict ∈ {UPHELD, DISPUTED, INTENTIONAL-OR-TEST-CODE, OVERSTATED}, confidence 1-10, and 2-4 sentences citing the code/evidence.
+```
+
+### 2b. Aggregate and reconcile (you adjudicate)
+
+- **All UPHELD** → keep the finding; record the consensus.
+- **A convincing INTENTIONAL-OR-TEST-CODE flag** → re-check; if correct, set Status **REFUTED** (reason: intentionally-vulnerable / non-production code). This is a real and common false positive — take it seriously.
+- **Majority DISPUTED, or a valid invalid-PoC argument** → re-examine the source/PoC once more. If the reviewers are right, downgrade Status (REFUTED / INCONCLUSIVE) or lower severity and say so. If you're confident they're wrong, you may keep it — but **document why you override them**.
+- **OVERSTATED** → tighten the impact/severity wording to exactly what the evidence supports.
+
+Record the result in each `verify-<id>.md` under the **Adversarial review** section (reviewer count, each verdict + one-line reason, the consensus, and any change you made). If the review overturns the result, update that artifact's `Status:` and `Severity adjustment:` lines too.
+
+> **Optional (Claude Code only): agent-team escalation.** When you want genuine back-and-forth rather than one-shot verdicts, create a small agent team and let the reviewers debate / hold counter-opinions, reconciling interactively before you record the outcome. **Copilot Chat has no agent teams** — there, use the parallel one-shot subagents above (the default). Either way the reviewers must be fresh and the prompt neutral.
+
+## Step 3 — Do NOT modify `cba_findings` or `cba_fp_verdicts`
 
 That's the orchestrator's job in the report phase. You only write artifact files.
 
-## Step 3 — Final restoration check
+## Step 4 — Final restoration check
 
 Before returning to the user, verify the live instance is back to baseline.
 
@@ -195,14 +244,15 @@ For `external-provided` mode (no filesystem / no lifecycle access), just re-run 
 curl -sSI <base-url>/<known-stable-route>            # status unchanged vs Step 0
 ```
 
-## Step 4 — Return summary
+## Step 5 — Return summary
 
 Return a compact markdown table to the user (this is for the user's situational awareness — **the orchestrator does NOT need it pasted back**, it reads the `verify-<id>.md` artifacts directly from disk):
 
-| Finding | Status | Severity (orig → final) | One-line note |
-|---|---|---|---|
-| G<n>-F<m> | CONFIRMED | HIGH → HIGH | Live PoC: <one-line> |
-| … | … | … | … |
+| Finding | Status | Severity (orig → final) | Review | One-line note |
+|---|---|---|---|---|
+| G<n>-F<m> | CONFIRMED | HIGH → HIGH | 3 UPHELD | Live PoC: <one-line> |
+| G<n>-F<k> | REFUTED | MED → — | overturned: test-code | reviewers flagged intentionally-vulnerable example |
+| … | … | … | … | … |
 
 Plus a one-paragraph high-level summary. The user can close this fork once the table looks right; the orchestrator will pick the artifacts up on its next `/codebase-audit:verify` (ingest) or `/codebase-audit:report` invocation.
 
@@ -220,6 +270,8 @@ Plus a one-paragraph high-level summary. The user can close this fork once the t
 - **Asserting "it hangs / crashes" without measuring.** Quantify (CPU% + `/proc`, exit code, N trials); 100% CPU ≠ a blocked wait; always include a control run.
 - **`kill` (SIGTERM) on a process you drove into a hang.** A spinning process ignores SIGTERM and keeps its port bound → the next run can't start. Use `kill -9` and confirm the port is free.
 - **Restarting an ephemeral instance between control and malicious runs without persisting state**, or handing a database / cache / state file to another process without the first process flushing it to disk — you relaunch into empty/stale state.
+- **Biasing the adversarial reviewers.** Don't paste your verdict, severity, or "I confirmed this" into a reviewer prompt — give them only the code + a neutral claim + the PoC, or you just get your own conclusion echoed back.
+- **Dismissing a reviewer who flags intentionally-vulnerable / test / example code.** That's a legitimate REFUTED — re-check the target's nature rather than waving it away; "vulnerable-by-design" repos are a common false-positive source.
 
 ## Quality Checks (before returning)
 
@@ -232,5 +284,7 @@ Plus a one-paragraph high-level summary. The user can close this fork once the t
 - [ ] The victim ran as the **stock production build** (not a harness / sanitizer / instrumented build) and was reached via the genuine attacker path; for trust-boundary bugs the *attacker* component was the one patched/controlled
 - [ ] A **control run** (honest input) is captured alongside each CONFIRMED DoS / hang / crash finding
 - [ ] DoS / hang / crash outcomes are **quantified** with the matching OS-level signal (CPU + `/proc`, exit/signal, RSS) — not merely asserted
+- [ ] Every CONFIRMED finding was **adversarially reviewed by ≥2 fresh subagents** given a neutral (verdict-free) prompt, with the outcome recorded in its `verify-<id>.md`
+- [ ] Any finding a reviewer flagged as intentionally-vulnerable / test code or invalid-PoC was **re-examined and reconciled** (Status / severity updated, or the override justified)
 
 > **Consolidation happens in `report`, not here.** The orchestrator picks up every `verify-<id>.md` you write via [report.md](report.md) Step 1. Do not implement an orchestrator-side ingest in this workflow.

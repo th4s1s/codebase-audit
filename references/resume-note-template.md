@@ -78,12 +78,13 @@ Total: <N> observations.
 4. **WARNING:** user may have hand-edited config files between phases — re-read before editing
 5. Reproduce PoC against live instance
 6. Write `artifacts/verify-<finding-id>.md` per finding (status: CONFIRMED/REFUTED/INCONCLUSIVE)
-7. Do NOT modify `cba_findings` or `cba_fp_verdicts`
-8. Return summary table
+7. **Adversarially review** each CONFIRMED finding with 2-3 fresh subagents — neutral prompt (code + claim + PoC only, no verdict/severity); reconcile and record the outcome in the artifact (verify.md Step 2)
+8. Do NOT modify `cba_findings` or `cba_fp_verdicts`
+9. Return summary table
 
 **Fork prompt template (paste into each forked conversation):**
 ```
-You are a forked conversation from <project> audit `audit-<timestamp>`. Workspace: <path>. Read /memories/session/<project>-audit-resume.md (Phase 5.5 section) AND /memories/repo/<project>-live-instance.md first. Your scope: live-verify findings <LIST> as Fork <X>. Follow the workflow in /home/lio/.copilot/skills/codebase-audit/workflows/verify.md. Write one artifact per finding at reports/audit-<ts>/artifacts/verify-<finding-id>.md. Return a summary table when done.
+You are a forked conversation from <project> audit `audit-<timestamp>`. Workspace: <path>. Read /memories/session/<project>-audit-resume.md (Phase 5.5 section) AND /memories/repo/<project>-live-instance.md first. Your scope: live-verify findings <LIST> as Fork <X>. Follow the workflow in /home/lio/.copilot/skills/codebase-audit/workflows/verify.md. Write one artifact per finding at reports/audit-<ts>/artifacts/verify-<finding-id>.md, then adversarially review each CONFIRMED finding with fresh subagents (verify.md Step 2) and record the outcome in the artifact. Return a summary table when done.
 ```
 
 ## Phase 6 (stitch in this root conversation after all forks finish)

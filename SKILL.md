@@ -32,7 +32,7 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 5. **Subagent agent type matters**: `Explore` agents are **read-only** — no terminal, no file writes. Use `general-purpose` for any subagent that must write artifacts, run SQL inserts, or hit the live instance. (Lesson learned the hard way — see `references/lessons-learned.md`.)
 
-6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** so curl/HTTP noise never bloats the orchestrator context. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report.
+6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** so curl/HTTP noise never bloats the orchestrator context. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report. Each fork also **adversarially reviews** its findings with fresh, unbiased subagents (verify Step 2) before returning, so auditor bias and intentionally-vulnerable/test code are caught early.
 
 7. **User gates control pacing**: User explicitly approves transitions between phases. Never auto-advance past a gate.
 
@@ -52,7 +52,7 @@ The skill supports six phases. User can invoke them individually after the prior
 | `deploy` | [workflows/deploy.md](workflows/deploy.md) | Deploy live instance from source (Docker, build artifact, or local run); document in `/memories/repo/<project>-live-instance.md` | Recon done OR independent setup task | Live instance running; endpoints documented; live-instance note saved to repo memory |
 | `audit` | [workflows/audit.md](workflows/audit.md) | Load prior CVEs/advisories (find patch-bypass surfaces), **parallel deep-audit subagents** per group, write resume note | Recon + deploy done | `cba_known_findings`, `cba_findings` populated; per-group `artifacts/G<n>-findings.md`; resume note updated |
 | `fpcheck` | [workflows/fpcheck.md](workflows/fpcheck.md) | **Parallel FP-check subagents** apply Hard Exclusions / Precedent rules / Marginal Gain Test — **static review only**, no live testing; write resume note | Audit done | `cba_fp_verdicts` populated; per-batch `artifacts/phase5-batch<X>.md`; resume note updated |
-| `verify` | [workflows/verify.md](workflows/verify.md) | **Runs in a forked conversation**, requires finding-ID list. Per-finding live-instance PoC; writes `artifacts/verify-<finding-id>.md`. Refuses to run without IDs. | FP-check produced TPs; user has opened a fork and passed `<ids>` (or pasted the orchestrator's fork prompt). | One verify artifact per finding in scope; CONFIRMED / REFUTED / INCONCLUSIVE. |
+| `verify` | [workflows/verify.md](workflows/verify.md) | **Runs in a forked conversation**, requires finding-ID list. Per-finding live-instance PoC, then **adversarial review by fresh subagents** (Step 2); writes `artifacts/verify-<finding-id>.md`. Refuses to run without IDs. | FP-check produced TPs; user has opened a fork and passed `<ids>` (or pasted the orchestrator's fork prompt). | One verify artifact per finding in scope; CONFIRMED / REFUTED / INCONCLUSIVE, each adversarially reviewed (bias / intentionally-vulnerable-code checks). |
 | `report` | [workflows/report.md](workflows/report.md) | Runs in the orchestrator. **Step 1 ingests every `verify-<id>.md` from disk** and refuses to continue if any TP is missing an artifact (or explicit skip). Then writes consolidated `report.md` + vendor-facing `disclosure-summary.md`. | All verify forks finished (or explicitly skipped); orchestrator-side. | `report.md`, `disclosure-summary.md`, updated `cba_fp_verdicts.final_id`. |
 | `report` | [workflows/report.md](workflows/report.md) | Stitch all verify artifacts + FP verdicts into consolidated `report.md` and `disclosure-summary.md` | All verify forks finished | Final report under `reports/audit-<timestamp>/` |
 
@@ -142,6 +142,7 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 | audit | `general-purpose` | claude opus 4.5+ | 1 per group | Deep adversarial audit |
 | fpcheck | `general-purpose` | claude opus 4.5+ | 1 per batch of 8-12 findings | Static FP review |
 | verify | n/a — runs in a forked **root** conversation | — | 1 fork per ~5-8 findings | Live PoC against deployed instance |
+| verify (review) | `general-purpose`, **fresh** (no fork/audit context) | claude opus 4.5+ | 2-3 per CONFIRMED finding | Adversarial review of each finding/PoC — neutral prompt; real-bug / valid-PoC / intentionally-vulnerable-code lenses (Claude-only: optional agent-team for interactive debate) |
 
 ## Rationalizations to Reject
 

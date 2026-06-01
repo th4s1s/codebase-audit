@@ -14,6 +14,7 @@ Hard rules:
 - Back up every config file before editing; verify restore at end
 - Re-read configs from disk before editing
 - Write one `artifacts/verify-<finding-id>.md` per finding (CONFIRMED / REFUTED / INCONCLUSIVE)
+- After the PoCs, adversarially review each CONFIRMED finding with fresh subagents — neutral prompt (code + claim + PoC only), checking real-bug / valid-PoC / intentionally-vulnerable-or-test-code; reconcile and record in the artifact (verify.md Step 2)
 - Return a summary table to the orchestrator
 
 Stop at the user gate before the next phase.
