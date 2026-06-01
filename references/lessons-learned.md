@@ -6,7 +6,7 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ## 1. `Explore` subagent is read-only — silently produces no artifacts
 
-**Observed in:** Phase 4 of the oathkeeper audit (May 2026). Six of seven groups returned no findings to SQL.
+**Observed in:** A prior Phase 4 run. Six of seven groups returned no findings to SQL.
 
 **Symptom:** Subagent returns analytical text but never runs `INSERT` statements or creates `artifacts/G<n>-findings.md` files. The orchestrator sees output that looks like findings but the database stays empty.
 
@@ -21,7 +21,7 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ## 2. Live-instance config drift between phases
 
-**Observed in:** oathkeeper audit. User hand-edited `.docker_compose/rules.json` and `config.yaml` between fpcheck and verify forks. A fork that assumed the baseline state could have made wrong edits or failed to restore correctly.
+**Observed in:** A prior audit. The user hand-edited bind-mounted config files between fpcheck and verify forks. A fork that assumed the baseline state could have made wrong edits or failed to restore correctly.
 
 **Symptom:** Verify forks see config that doesn't match the audit-phase snapshot. Restorations write back a state the user didn't want.
 
@@ -29,14 +29,14 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 - Always **re-read** any config file immediately before editing it.
 - Back up with a unique filename per fork+finding: `/tmp/<file>.bak.fork-<X>-<finding-id>`.
 - After PoC, `diff` against the backup to confirm what you changed.
-- Restore from backup, verify via a probe command (e.g., `curl /rules`), and only THEN move to next finding.
+- Restore from backup, verify via a probe command (re-run the documented liveness command), and only THEN move to next finding.
 - The live-instance note has a "Hand-edit log" section — update it after any temp modification.
 
 ---
 
 ## 3. Patch-bypass class findings are the highest-value output
 
-**Observed in:** oathkeeper audit — the two CRITICAL findings (G6-F1, G5-F1) both came from GHSA-vhr5 (CVE-2026-33495) being patched in `proxy/proxy.go` but the same root cause left untouched in `api/decision.go`.
+**Observed in:** A prior audit — the two CRITICAL findings both came from a single GHSA being patched in one handler but the same root cause left untouched in a sibling handler.
 
 **Symptom:** A vendor patches one file, files a CVE, and considers the issue closed. Sibling files with identical root cause aren't reviewed.
 
@@ -49,7 +49,7 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ## 4. Operator-config "vulnerabilities" usually fail Marginal Gain Test
 
-**Observed in:** Several Phase 5 dismissals — e.g., `flavor` URL traversal in oathkeeper's keto authorizer was FP because the operator already controls `base_url` and could achieve the same effect by setting it directly.
+**Observed in:** Several Phase 5 dismissals — e.g., a URL-traversal finding that turned out to be FP because the operator already controlled the same setting directly and the new path gave no marginal attacker gain.
 
 **Symptom:** A finding describes an operator-only configuration path that grants an effect the operator could already produce via another documented setting. Listed as TP, but actual attacker has no marginal gain.
 

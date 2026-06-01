@@ -101,7 +101,7 @@ cp /tmp/<filename>.bak.fork-<X>-<finding-id> <config-file>
 docker compose restart <service>  # if needed
 ```
 
-Verify restore worked (e.g., `curl -s http://127.0.0.1:<api-port>/rules | jq '[.[]|.id]'` for oathkeeper).
+Verify restore worked (e.g., re-probe the same endpoint the liveness command uses and confirm it still returns the expected baseline state).
 
 ### 1g. Write the verify artifact
 

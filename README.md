@@ -2,7 +2,7 @@
 
 A structured, multi-phase security audit skill that drives parallel subagents through **recon → deploy → audit → fpcheck → verify → report**. Works with both **GitHub Copilot Chat** and **Claude Code CLI**.
 
-Battle-tested against real-world Go/HTTP applications. Codifies hard-won lessons from actual audits (see [`references/lessons-learned.md`](references/lessons-learned.md)).
+Codifies hard-won lessons from actual audits (see [`references/lessons-learned.md`](references/lessons-learned.md)).
 
 ## What it does
 
