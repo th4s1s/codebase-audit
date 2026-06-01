@@ -170,6 +170,9 @@ Use these definitions consistently:
 
 - **Technical precision**: Use exact file paths, function names, line numbers
 - **No speculation**: Every claim must be backed by code evidence or PoC output
+- **Measured, not asserted**: State the outcome you actually observed and quantified ("observed M/N crashes", "100% CPU for ≥X min, no return") — never "it would crash/hang". Prefer "**effectively unbounded** (expected N iterations)" over "infinite", and don't write "always"/"never" without evidence. Precise-and-quantified reads as *stronger*, not weaker.
 - **Attacker perspective**: Write impact from the attacker's point of view
+- **Honest severity**: Lead with what the attacker concretely gains (Marginal Gain Test). A self-healing / self-only / operator-misconfig condition is Informational, not a vuln — don't inflate, and don't defend an overstated rating under pushback.
 - **Actionable remediation**: Give specific code-level fixes, not generic advice like "validate input"
+- **Self-contained, portable PoC**: Stage custom PoC scripts/patches under a relative `poc/` dir with the **real captured output** embedded. Never reference the `reports/audit-<ts>/` path (the triager won't have it) and never ship prebuilt binaries — provide a patch + build script the maintainer can run from a clean checkout.
 - **Concise findings**: Each finding should be self-contained and readable in 2 minutes

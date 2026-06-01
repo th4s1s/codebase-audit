@@ -129,6 +129,95 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ---
 
+## 11. A PoC must reproduce impact on the REAL build via the genuine attacker path — not a harness / sanitizer / debugger stand-in
+
+**Observed in:** A DoS audit claimed a MEDIUM wallet-crash from (a) an ASan abort in a hand-written harness that called the vulnerable function directly, then (b) a `gdb`-injected byte to force the crash. The honest end-to-end test on the stock release binary showed **0 crashes in 2400 unassisted attempts** — the crash gate was a heap byte the attacker can't control. Severity flip-flopped MEDIUM↔LOW and an overstated report was nearly shipped.
+
+**Symptom:** The "PoC" is the auditor's own harness invoking the vulnerable function, a sanitizer (ASan/UBSan) abort, or a debugger-injected condition — none of which the real attacker controls. It proves a code *defect* exists, not *exploitable production impact*.
+
+**Root cause:** Conflating "defect exists" with "attacker achieves impact." Sanitizer/debug/instrumented builds and direct-call harnesses bypass the reachability constraints, input validation, and heap/runtime state the production build imposes.
+
+**Prevention:**
+- Reproduce on the **real, production-flag build**. For an *impact* claim, no ASan/UBSan — a release build (`-DNDEBUG`) strips asserts and catches throws, so a sanitizer abort is a *different outcome* than the stock binary's. ASan proves the defect; it does not prove production impact.
+- Reach the bug through the **genuine attacker-reachable path with attacker-controlled inputs only** — no private-member pokes, no re-implemented logic, no debugger-*injected* state. (A debugger that only *reads* state — e.g. a backtrace of an already-hung thread — is fine; one that *injects* state to force the bug is not.)
+- **Quantify** the real outcome over many trials ("N attempts → M crashes"; "100% CPU for ≥X min, never returns"). Don't assume probabilities — measure them.
+- If the real outcome on a stock build is unobservable, downrate to **Informational / hardening**; don't ship it as a vuln.
+
+---
+
+## 12. Trust-boundary bugs (client↔server, daemon→client): patch the ATTACKER component, keep the VICTIM stock
+
+**Observed in:** Verifying a malicious-daemon → wallet hang. The bug lives in the client (victim); the trigger is the bytes the server (attacker) puts on the wire.
+
+**Symptom:** Temptation to either (a) modify the victim to "make the bug fire," or (b) hand-roll the malicious wire bytes in a script and get the framing wrong, so the victim rejects them *before* reaching the bug — producing a false REFUTED.
+
+**Root cause:** The vulnerable component is the one that must stay pristine to prove the claim; the attacker-controlled component is free to emit anything.
+
+**Prevention:**
+- Run the **victim 100% stock** and prove it (`readlink /proc/<pid>/exe` resolves to the released binary; no instrumentation, no recompile of the victim).
+- Model the attacker by **patching/controlling the attacker's own component** to emit the crafted input — that only changes "what a hostile peer puts on the wire," which a real attacker fully controls. Let the attacker component's **real serializer** produce wire-correct bytes (this avoids hand-rolled-framing false negatives).
+- State in the report that the patch is the *attacker* side and the victim binary is unmodified — a real attacker needs none of your code, only the ability to send those bytes.
+
+---
+
+## 13. Verifying non-HTTP, DoS, hang, and crash findings: quantify with OS-level signals + a control run
+
+**Observed in:** The verify workflow's curl/HTTP-response pattern didn't fit a compiled daemon/wallet whose "impact" is a 100%-CPU spin with no response.
+
+**Symptom:** Auditor asserts "it hangs / it's slow / it crashes" without a measured, reproducible signal — or can't tell a genuine spin from a process merely blocked on input.
+
+**Root cause:** The HTTP-centric evidence model ("capture status + headers + body") has no analog for resource-exhaustion / non-HTTP / crash outcomes.
+
+**Prevention:**
+- Pick the signal that matches the impact: **CPU spin** → `top -bH -p <pid>` per-thread %CPU + `/proc/<pid>/task/<tid>/stat` field 14 (utime ticks ÷ clock-tick) sampled over time (rising linearly = real spin); **hang** → the request/command never returns over a meaningful window (≥ minutes); **crash** → exit code / signal / core dump; **memory blow-up** → RSS over time.
+- **100% CPU distinguishes a spin from a blocked wait** (a process parked at a prompt or on I/O sits at ~0% CPU). Use it to rule out "it's just waiting."
+- Always run a **control**: the same stock victim + setup with *honest* input. "Honest input → completes in ~1 s; malicious input → 100% CPU, never returns" isolates the bug as the cause and rules out a broken harness/environment.
+- Capture the proof in the artifact (the sampled CPU/utime table, "no response after N s", a stack of the spinning thread). Show the measured outcome — never write "it would hang."
+
+---
+
+## 14. State observed outcomes precisely; adversarially verify the final report before it ships
+
+**Observed in:** A report draft called an attacker-controlled loop "infinite / never exits." Independent re-derivation showed a tiny but non-zero per-iteration exit probability — *operationally* unbounded (expected > 10^5 years), not mathematically infinite. A second claim ("branch X runs because mitigation flag is off by default") was backwards — the flag defaults *on*; the branch runs for an unrelated reason.
+
+**Symptom:** Plausible-sounding but technically wrong or overstated claims (severity, mechanism, "infinite", "always", "never") that a sharp vendor will catch — damaging credibility and risking a bug-bounty rejection for overstatement.
+
+**Root cause:** Findings written from the model's narrative instead of re-checked against source + captured evidence.
+
+**Prevention:**
+- Prefer precise, defensible wording: "**effectively unbounded** (per-iteration exit prob ≈ p; expected ≈ N iterations)" over "infinite"; "**observed** X" over "it would X". Precise-and-quantified is *stronger* evidence than hand-waving, not weaker.
+- Before finalizing `report.md`, run an **adversarial verification pass** (ideally independent reviewers/subagents) over each finding across three lenses: (1) every code citation / line number / quoted snippet matches source; (2) the root-cause mechanism re-derives from scratch; (3) no claim is unsupported by the captured evidence and the severity isn't inflated. Fix whatever they catch before sending.
+
+---
+
+## 15. Live-instance operational footguns (lifecycle, persistence, cross-process state)
+
+**Observed in:** A regtest-based verify fork — several traps hit in one session.
+
+**Symptom + Prevention (each is a distinct footgun):**
+- **Hung/spinning processes ignore `SIGTERM`.** A process stuck in a tight loop never runs its shutdown handler, so `kill` leaves it alive holding its port → the next run fails to bind. **`kill -9` any process you've driven into a hang**, and confirm the port is free before relaunching.
+- **Know the instance's persistence semantics before restarting between control and test runs.** Some test modes are ephemeral (state wiped on restart unless a "keep" flag is set). If you restart to flip config between control and malicious runs, **persist the funded/seeded state** (a keep flag, a snapshot) or you'll relaunch into an empty instance and waste a cycle.
+- **Flush state to disk before handing it between processes.** If process A builds state (e.g. a funded wallet cache) and process B reads the same files, A must **explicitly save/close first** — a `kill -9` of A loses unflushed in-memory state and B then reads a stale/empty file.
+- **Lifecycle ops may need privileges the sandbox withholds.** In a sandboxed / PID-namespaced shell, `kill`/`pgrep` may not reach host daemons; run start/stop/kill with the sandbox disabled (read-only probes like `curl` and `/proc` reads work either way). Record this in the live-instance note's *Common ops*.
+- **Non-interactive CLI driving is finicky:** pass command + args as **separate tokens** (`--command transfer ADDR 1`, *not* `--command "transfer ADDR 1"`), and confirm the command actually executed — a wrong invocation can exit 0 with an "unknown command" error that masquerades as "didn't hang."
+
+---
+
+## 16. Apply the attacker-advantage test FIRST; lead with the honest verdict; never defend an inflated severity
+
+**Observed in:** A DoS audit where six candidate MEDIUMs collapsed to two genuine ones — some "findings" were a node correctly dropping a misbehaving peer (self-healing, no attacker gain), others were operator misconfiguration.
+
+**Symptom:** Effort spent writing up — and severity defended on — a bug that gives the attacker no durable advantage: a transient/self-healing condition, a self-only DoS, or something the operator could already do.
+
+**Root cause:** Starting from "is this a bug?" instead of "what does the attacker concretely gain, given the threat model?"
+
+**Prevention:**
+- For every candidate, first answer: *what new, durable capability does the attacker gain that they didn't already have?* No marginal gain → not a vuln (Marginal Gain Test, HE-17).
+- A node/app **dropping or banning a misbehaving peer is correct behavior**, not a DoS. Transient, self-healing, or requires-the-victim-to-attack-itself → LOW / Informational at most.
+- **Lead with the honest verdict and hold it under pushback.** If pressed to inflate, re-run the attacker-advantage test and report what's true. An overstated bug-bounty submission is often disqualifying — a far worse outcome than an honest "Informational."
+
+---
+
 ## How to add a new lesson
 
 When you encounter a new failure mode:

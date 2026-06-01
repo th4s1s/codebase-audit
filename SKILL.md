@@ -38,6 +38,8 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 8. **FP-check is static-only**: FP-check subagents re-read source and apply 18 Hard Exclusions + 10 Precedent rules. They do NOT use the live instance — that is what verify forks are for. This separation prevents an "I couldn't reproduce it" handwave from killing a real source-level bug.
 
+9. **Honest impact over inflated severity; PoC on the real build**: A finding is a vulnerability only when impact is demonstrated on the **real, unmodified** target via the **genuine attacker path with attacker-controlled inputs** — not a self-written harness, a sanitizer abort, or a debugger-injected condition (those prove a *defect*, not impact). Apply the attacker-advantage test first; if the stock-build outcome is unobservable or self-healing, it is Informational. Lead with the honest verdict and never defend an overstated severity under pushback. (See `references/lessons-learned.md` items 11–16.)
+
 ## Sub-Command Router
 
 The skill supports six phases. User can invoke them individually after the prior phase is complete, or run the full pipeline.
@@ -154,6 +156,10 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 | "Verify in the main conversation to save tokens" | Forks isolate failure and noise. Always fork for verification. |
 | "Skip the resume note this phase, it's fine" | Compaction is unpredictable. Always rewrite the resume note at phase end. |
 | "Context is still big enough, don't bother compacting yet" | Manual compact at every gate. Letting auto-compaction fire mid-phase frequently drops the exact state the next phase needs. The cost of compacting too early is zero; the cost of compacting too late is a corrupted audit. |
+| "My harness / ASan triggers it — that's a PoC" | A self-written harness, sanitizer abort, or debugger-injected condition proves a *defect*, not impact. Reproduce on the **stock production build** via the genuine attacker path with attacker-controlled inputs only. If the stock outcome is unobservable → Informational. |
+| "Just patch the target so the bug fires" | For trust-boundary bugs, patch the **attacker** component and keep the **victim** binary 100% stock (verify via `/proc/<pid>/exe`). Modifying the victim proves nothing. |
+| "It obviously hangs / crashes — no need to measure" | Quantify on the real binary: `top -bH` + `/proc/.../stat` for a spin, exit/signal for a crash, N-trial counts. 100% CPU ≠ a blocked wait. Pair with an honest-input control run. |
+| "Call it an infinite loop / say it always crashes" | Use precise, measured wording ("effectively unbounded, expected N iters"; "observed M/N"). Overstatement gets bug-bounty submissions rejected — adversarially verify every claim before shipping. |
 
 ## Lessons Learned (FROM REAL AUDITS — READ BEFORE STARTING)
 
@@ -165,6 +171,12 @@ See [references/lessons-learned.md](references/lessons-learned.md) for the full 
 4. **Patch-bypass class is gold** — when ingesting CVEs, look at the patch diff and check sibling files for the same root cause untouched. (Highest-severity findings in real audits come from this.)
 5. **Operator-config "vulns" usually fail the Marginal Gain Test** — if the operator could already do X via documented config, finding a second way is not a CVE.
 6. **Session memory drops** from subagents accumulate — clean them up after consolidating into `artifacts/`.
+7. **PoC rigor** — reproduce impact on the real production-flag build via the genuine attacker path; a self-harness / sanitizer abort / debugger-injected condition proves a *defect*, not impact (downrate to Informational if the stock-build outcome is unobservable).
+8. **Trust-boundary PoCs: patch the attacker, keep the victim stock** — for client↔server / server→client bugs, control the attacker's component (let its real serializer emit wire-correct bytes) and verify the victim is the unmodified binary (`readlink /proc/<pid>/exe`).
+9. **DoS / hang / non-HTTP findings need OS-level proof + a control** — quantify with `top -bH` + `/proc/<pid>/task/<tid>/stat` (spin), exit code (crash), or RSS (memory); 100% CPU distinguishes a spin from a blocked wait; always pair with an honest-input control run.
+10. **State outcomes precisely + adversarially verify the report** — "effectively unbounded (expected N iters)" not "infinite", "observed X" not "would X"; run an independent pass over citations / mechanism / severity before shipping.
+11. **Live-instance footguns** — `kill -9` hung processes (they ignore SIGTERM and squat ports); persist ephemeral state before restarting between runs; flush state to disk before any cross-process handoff; lifecycle ops may need the sandbox disabled.
+12. **Attacker-advantage test FIRST** — a node dropping a misbehaving peer, or a self-healing / operator-misconfig condition, is not a vuln; lead with the honest verdict.
 
 ## Workflow Entry
 

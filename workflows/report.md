@@ -78,6 +78,22 @@ Use [../references/phase6-report.md](../references/phase6-report.md) as the temp
    - Tools used
    - **Artifact directory listing** (so reader can audit our process)
 
+### PoC packaging (for reproducibility)
+
+If the audit produced custom PoC scripts/patches, stage them in a single self-contained **`poc/` directory with relative paths** (e.g. `poc/run_poc.sh`, `poc/<bug>.patch`, `poc/output/`). The triager will **not** have your `reports/audit-<timestamp>/` tree — never reference that nested path in the report or PoC. Each PoC should:
+- run from a clean checkout (build any attacker-side patch from the included `.patch`; do **not** ship prebuilt binaries — the maintainer rebuilds and shouldn't trust an opaque binary);
+- embed the **real captured output** (paste exactly what the script printed — don't hand-write expected output);
+- keep the victim stock and state that the patch, if any, is the *attacker* side (see verify.md "PoC rigor + evidence model").
+
+## Step 4b — Adversarial self-verification (before disclosure)
+
+Before the user gate, re-verify the report's claims against source + captured evidence — overstatement or a wrong citation in a bug-bounty submission is often disqualifying. For each finding, check three lenses (independent reviewers / subagents are ideal — they catch what the author's narrative misses):
+1. **Citations** — every `file:line`, quoted snippet, and constant matches the source at the audited commit.
+2. **Mechanism** — the root cause re-derives from scratch; the data flow actually reaches the sink.
+3. **Claims & severity** — every quantitative/behavioral claim is backed by the captured evidence, and the severity is not inflated.
+
+Tighten wording to what was measured: "**effectively unbounded** (expected N iterations)" not "infinite"; "**observed** M/N crashes" not "it crashes"; "single-component DoS" not "takes down the service" unless shown. Fix everything the pass catches before Step 5.
+
 ## Step 5 — Write `disclosure-summary.md`
 
 A SHORT vendor-facing summary (≤2 pages). Sections:

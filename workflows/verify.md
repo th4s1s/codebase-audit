@@ -46,6 +46,28 @@ The `Capabilities` table in the live-instance note is authoritative. For `extern
 
 If the live instance is **not reachable** and mode is `local-managed`, bring it up using the documented `Common ops` commands. If it is not reachable and mode is `external-provided`, stop — return to the user with the unreachable status; do NOT attempt to restart or redeploy. The user must coordinate with the operator.
 
+### PoC rigor + evidence model (read before ANY PoC)
+
+These rules are cross-cutting — they apply to every finding, web-app or not. The rest of this workflow defaults to HTTP/curl; use this section to adapt for compiled-binary, protocol, DoS, hang, and crash findings. (See [../references/lessons-learned.md](../references/lessons-learned.md) items 11–14.)
+
+1. **Reproduce impact on the REAL, unmodified target via the genuine attacker path.** The component you are proving vulnerable must be the **stock production build**, reached through the real attacker-reachable path with **attacker-controlled inputs only**. A self-written harness that calls the function directly, a sanitizer (ASan/UBSan) abort, or a debugger-*injected* condition proves a *defect*, not exploitable impact — never present one as a confirmed vuln. (A debugger that only *reads* state — e.g. a backtrace of an already-hung thread — is fine.) If the real outcome on the stock build is unobservable, mark the finding **INCONCLUSIVE / source-only** and recommend downrating to Informational; do not assert impact you didn't observe.
+
+2. **Trust-boundary bugs: patch the ATTACKER, keep the VICTIM stock.** When the bug is in component A (victim) but triggered by data from component B (attacker) — a malicious server→client response, a malicious peer, a compromised upstream — model the attacker by **controlling/patching B** (or a MITM proxy) to emit the crafted input, and run **A 100% stock**. Verify the victim is the released binary (`readlink /proc/<pid>/exe`). Prefer letting B's **real serializer** produce the wire bytes over hand-rolling the framing (a framing bug reads as a false REFUTED). State in the artifact that the patch is the *attacker* side and the victim is unmodified.
+
+3. **Always run a CONTROL.** Run the same stock victim + setup once with **honest input** and once with the **malicious input**. The *difference* (e.g. "honest → completes in ~1 s; malicious → 100% CPU, never returns") is the proof and rules out a broken harness/environment as the cause.
+
+4. **Capture the evidence that matches the impact type:**
+
+| Impact type | What "CONFIRMED" looks like |
+|---|---|
+| HTTP request/response (injection, authz, SSRF, disclosure) | full `curl -i` request + status/headers/body (the Step 1d default) |
+| **CPU spin / algorithmic DoS** | `top -bH -p <pid>` per-thread %CPU + `/proc/<pid>/task/<tid>/stat` field 14 (utime) sampled over time — rising linearly = real spin. **100% CPU ⇒ spinning; ~0% ⇒ merely blocked on input.** |
+| **Hang** | the request/command never returns over a meaningful window (≥ minutes); show the elapsed-time samples |
+| **Crash** | exit code / fatal signal / core dump / sanitizer summary (a sanitizer build is OK for a *crash-reachability* PoC, but still trigger it via the genuine input path, not a direct-call harness) |
+| **Memory exhaustion** | RSS over time; OOM kill |
+
+Show the measured outcome in the artifact — never write "it would hang/crash."
+
 ## Step 1 — Per-finding loop
 
 For EACH finding in scope:
@@ -75,7 +97,9 @@ Where `<X>` is your fork letter and `<finding-id>` is the current finding. This 
 
 **The user may have hand-edited the live-instance config between phases.** Always re-read the current file content before making edits — never assume it matches what was there yesterday.
 
-### 1d. Apply the change, restart if needed, capture HTTP output
+### 1d. Apply the change, restart if needed, capture output
+
+**Run the CONTROL first** (honest input) so you have a baseline to contrast against. For **non-HTTP / DoS / hang / crash** findings, capture the signal from the *evidence model* table above (CPU/`/proc` samples, elapsed-with-no-return, exit code, RSS) instead of an HTTP response — the rest of this step is the HTTP default.
 
 Use `curl -i` to capture full headers + body. Build the URL from the **base URL recorded in the live-instance note** — never substitute `127.0.0.1` for a remote host. Pipe to a temp file if large:
 
@@ -120,15 +144,18 @@ Save to **`reports/audit-<timestamp>/artifacts/verify-<finding-id>.md`** with th
 - Backup taken: `/tmp/...bak.fork-<X>-<finding-id>`
 - Config change: <description, or "none">
 - Restart required: yes/no
+- Victim build: <stock release binary — confirm via `readlink /proc/<pid>/exe`; for trust-boundary bugs, name which *attacker* component was patched/controlled>
+- Control (honest input) result: <e.g. "completes in ~1 s" — the baseline the malicious run is contrasted against>
 
 ## PoC invocation
 ```bash
 <exact curl/script>
 ```
 
-## Full captured response
+## Captured evidence
+<For HTTP findings: status line + headers + body. For DoS/hang/crash/non-HTTP: the CPU + `/proc/<pid>/task/<tid>/stat` samples over time, the "no response after N s" measurement, the exit code/signal/core, or a stack of the spinning thread — alongside the CONTROL result for contrast. Show the measured outcome; never "it would X.">
 ```http
-<status line + headers + body>
+<status line + headers + body>     (HTTP findings; otherwise paste the matching evidence)
 ```
 
 ## Interpretation
@@ -188,6 +215,11 @@ Plus a one-paragraph high-level summary. The user can close this fork once the t
 - **Capturing only stdout, not headers** — use `curl -i` or `curl -D-`.
 - **Concluding REFUTED too quickly** when a default config guard could be relaxed. If the finding is "X works when Y is enabled" and Y is off by default, that's still TP — document the config requirement, don't refute.
 - **Spending excessive time on infra-blocked findings.** If you've spent more than a few attempts standing up infrastructure (e.g., gRPC test client) for one finding, mark INCONCLUSIVE and move on.
+- **Presenting a harness / sanitizer / debugger-injected trigger as the PoC.** Those prove a *defect*, not impact. Reproduce on the stock build via the genuine attacker path; if the stock outcome is unobservable, mark source-only / INCONCLUSIVE.
+- **Modifying the victim to make the bug fire.** For trust-boundary bugs, patch the *attacker* component and keep the victim binary stock (verify `readlink /proc/<pid>/exe`).
+- **Asserting "it hangs / crashes" without measuring.** Quantify (CPU% + `/proc`, exit code, N trials); 100% CPU ≠ a blocked wait; always include a control run.
+- **`kill` (SIGTERM) on a process you drove into a hang.** A spinning process ignores SIGTERM and keeps its port bound → the next run can't start. Use `kill -9` and confirm the port is free.
+- **Restarting an ephemeral instance between control and malicious runs without persisting state**, or handing a database / cache / state file to another process without the first process flushing it to disk — you relaunch into empty/stale state.
 
 ## Quality Checks (before returning)
 
@@ -197,5 +229,8 @@ Plus a one-paragraph high-level summary. The user can close this fork once the t
 - [ ] All config backups have been restored
 - [ ] Live instance is operational (health check passes)
 - [ ] You have NOT modified `cba_findings` or `cba_fp_verdicts`
+- [ ] The victim ran as the **stock production build** (not a harness / sanitizer / instrumented build) and was reached via the genuine attacker path; for trust-boundary bugs the *attacker* component was the one patched/controlled
+- [ ] A **control run** (honest input) is captured alongside each CONFIRMED DoS / hang / crash finding
+- [ ] DoS / hang / crash outcomes are **quantified** with the matching OS-level signal (CPU + `/proc`, exit/signal, RSS) — not merely asserted
 
 > **Consolidation happens in `report`, not here.** The orchestrator picks up every `verify-<id>.md` you write via [report.md](report.md) Step 1. Do not implement an orchestrator-side ingest in this workflow.
