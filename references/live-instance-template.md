@@ -11,7 +11,7 @@ This file is read by:
 
 ## Template (copy and fill)
 
-```markdown
+````markdown
 # <Project> — Live Test Instance
 
 ## Deployment mode
@@ -146,7 +146,7 @@ docker compose down                        # full stop
 - YYYY-MM-DD HH:MM — restored to baseline
 
 (Local-managed: useful for verify forks to know if config drifted since deploy. External-provided: log every operator-coordinated change made for the audit.)
-```
+````
 
 ---
 

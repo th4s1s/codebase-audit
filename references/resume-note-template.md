@@ -8,7 +8,7 @@ Rewrite this file **at the end of every major phase**. Goal: a fresh orchestrato
 
 ## Template (copy and fill)
 
-```markdown
+````markdown
 # <Project> Audit — Resume State
 
 **Audit dir:** `<absolute-path>/reports/audit-<timestamp>/`
@@ -107,7 +107,7 @@ sqlite3 <audit-dir>/audit.db ".tables"
 docker compose -f <compose-file> ps  # or equivalent live-instance health check
 ```
 Read this file + `/memories/repo/<project>-live-instance.md` and continue from the next NOT STARTED phase.
-```
+````
 
 ---
 

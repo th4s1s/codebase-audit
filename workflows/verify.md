@@ -131,7 +131,7 @@ Verify restore worked (e.g., re-probe the same endpoint the liveness command use
 
 Save to **`reports/audit-<timestamp>/artifacts/verify-<finding-id>.md`** with this structure:
 
-```markdown
+````markdown
 # Verify <finding-id> — <short title>
 
 **Audit:** `audit-<timestamp>`  · **Fork:** <letter>  · **Date:** <date>
@@ -175,7 +175,7 @@ Save to **`reports/audit-<timestamp>/artifacts/verify-<finding-id>.md`** with th
 ## Cleanup verified
 - Config restored from backup: yes
 - Live instance back to baseline: yes (verified via `<command>`)
-```
+````
 
 ## Step 2 — Adversarial review of each finding (fresh, unbiased subagents)
 

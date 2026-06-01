@@ -15,7 +15,7 @@ Use the current date and time for the directory name. If PoC scripts were create
 
 ## Report Template
 
-```markdown
+````markdown
 # Security Audit Report
 
 **Target**: {application_name} {version}
@@ -153,7 +153,7 @@ This audit used a parallel feature-mapped approach:
 ### Tools Used
 
 - {list of tools: source code analysis, IDA Pro MCP, live testing, etc.}
-```
+````
 
 ## Severity Calibration
 
