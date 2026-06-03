@@ -103,6 +103,21 @@ cd codebase-audit
 ./install.sh --uninstall    # remove selected clients' launchers AND skill dirs
 ```
 
+**Windows (PowerShell)** — no bash required; use the equivalent `install.ps1`:
+
+```powershell
+git clone https://github.com/th4s1s/codebase-audit.git
+cd codebase-audit
+.\install.ps1                 # install for both clients
+# or:
+.\install.ps1 copilot         # Copilot Chat only
+.\install.ps1 claude          # Claude Code CLI only
+.\install.ps1 -Insiders       # use VS Code Insiders paths
+.\install.ps1 -Uninstall      # remove selected clients' launchers AND skill dirs
+```
+
+If PowerShell blocks the script, allow it for the session: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`. (`install.sh` also works on Windows under Git Bash / WSL.) On Windows the install roots are the same names under your profile — `%USERPROFILE%\.claude\...` and `%USERPROFILE%\.copilot\...` — and the Claude launchers receive a forward-slash `__SKILL_DIR__` path, which Claude Code accepts.
+
 ### Where things go
 
 Each client gets its **own self-contained copy** of the skill — installing one does not touch the other.
@@ -184,6 +199,7 @@ codebase-audit/                 # this repo (the clone)
 ├── SKILL.md                    # entrypoint; sub-command router; lessons summary
 ├── README.md
 ├── install.sh                  # per-client installer (sed-substitutes __SKILL_DIR__)
+├── install.ps1                 # same installer for Windows PowerShell
 ├── LICENSE
 ├── workflows/                  # one per phase (the actual audit logic)
 │   ├── recon.md
@@ -242,7 +258,7 @@ The launcher templates in `prompts/` and `claude/commands/` are tracked in git a
 ## Requirements
 
 - VS Code with GitHub Copilot Chat, and/or Claude Code CLI
-- A POSIX shell (`bash`) for install
+- For install: a POSIX shell (`bash`) on macOS / Linux / WSL / Git Bash, **or** PowerShell 5.1+ on Windows (`install.ps1`)
 - Typically `sqlite3` for `audit.db` queries during audits
 
 ## License

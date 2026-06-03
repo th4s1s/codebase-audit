@@ -1,0 +1,193 @@
+#requires -Version 5.1
+<#
+install.ps1 — Install the codebase-audit skill for GitHub Copilot Chat and/or
+Claude Code CLI on Windows (PowerShell). Native equivalent of install.sh.
+
+Design: each client gets its OWN self-contained copy of the skill.
+  - Copilot install root: $HOME\.copilot\skills\codebase-audit\
+  - Claude install root:  $HOME\.claude\skills\codebase-audit\
+      launchers:          $HOME\.claude\commands\codebase-audit.md
+                          $HOME\.claude\commands\codebase-audit\*.md
+
+Claude launchers contain the literal string __SKILL_DIR__; this script
+substitutes it with the client's own skill dir (in forward-slash form, which
+Claude Code accepts on Windows) so each set of launchers points at its own copy.
+Installing one client does not touch the other.
+
+Usage:
+  .\install.ps1                 # install for both clients
+  .\install.ps1 copilot         # only Copilot Chat
+  .\install.ps1 claude          # only Claude Code CLI
+  .\install.ps1 -Insiders       # use VS Code Insiders paths
+  .\install.ps1 -Uninstall      # remove the selected clients' launchers
+                                #   AND their skill install dirs
+
+(If PowerShell blocks the script, run it for this session only with:
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+ install.sh also works on Windows under Git Bash / WSL.)
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+    [string[]]$Targets,
+    [switch]$Insiders,
+    [switch]$Uninstall
+)
+
+$ErrorActionPreference = 'Stop'
+$ScriptDir = $PSScriptRoot
+$SkillName = 'codebase-audit'
+
+# ---- resolve targets ----
+$valid = @('copilot', 'claude', 'all')
+if (-not $Targets -or $Targets.Count -eq 0) { $Targets = @('all') }
+foreach ($t in $Targets) {
+    if ($valid -notcontains $t) { Write-Error "Unknown arg: $t (use copilot | claude | all)"; exit 1 }
+}
+if ($Targets -contains 'all') { $Targets = @('copilot', 'claude') }
+$Targets = @($Targets | Select-Object -Unique)
+
+# ---- per-client paths ----
+$CopilotSkillDir   = Join-Path $HOME ".copilot\skills\$SkillName"
+$ClaudeSkillDir    = Join-Path $HOME ".claude\skills\$SkillName"
+$ClaudeCommandsDir = Join-Path $HOME ".claude\commands"
+
+function Get-CopilotPromptsDir {
+    $codeDir = if ($Insiders) { 'Code - Insiders' } else { 'Code' }
+    $appData = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $HOME 'AppData\Roaming' }
+    return (Join-Path $appData "$codeDir\User\prompts")
+}
+$CopilotPromptsDir = Get-CopilotPromptsDir
+
+# ---- sanity ----
+if (-not (Test-Path (Join-Path $ScriptDir 'SKILL.md'))) {
+    Write-Error "SKILL.md not found next to install.ps1."; exit 1
+}
+
+# ---- helpers ----
+
+# Copy SKILL.md + workflows\ + references\ from $ScriptDir into $Target.
+# Skips if target is the same as $ScriptDir (cloned directly into install location).
+function Install-SkillFiles {
+    param([string]$Target)
+    New-Item -ItemType Directory -Force -Path $Target | Out-Null
+    $absTarget = (Resolve-Path $Target).Path
+    if ($absTarget -eq $ScriptDir) {
+        Write-Host "  (source dir IS install dir; skipping skill file copy)"
+        return
+    }
+    Write-Host "  Copying skill content -> $Target"
+    Copy-Item -Force (Join-Path $ScriptDir 'SKILL.md') (Join-Path $Target 'SKILL.md')
+    foreach ($sub in @('workflows', 'references')) {
+        $srcSub = Join-Path $ScriptDir $sub
+        if (Test-Path $srcSub) {
+            $dstSub = Join-Path $Target $sub
+            New-Item -ItemType Directory -Force -Path $dstSub | Out-Null
+            Copy-Item -Force (Join-Path $srcSub '*.md') $dstSub -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# Substitute __SKILL_DIR__ in $Src with $SkillDir (forward-slash form), write to $Dst.
+# UTF-8 without BOM so the launcher's YAML frontmatter is not corrupted.
+function Copy-Template {
+    param([string]$Src, [string]$Dst, [string]$SkillDir)
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Dst) | Out-Null
+    $skillDirFwd = $SkillDir -replace '\\', '/'
+    $content = (Get-Content -Raw -LiteralPath $Src) -replace '__SKILL_DIR__', $skillDirFwd
+    [System.IO.File]::WriteAllText($Dst, $content, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "  -> $Dst"
+}
+
+function Install-Copilot {
+    Write-Host "[copilot]"
+    Write-Host "  skill dir:     $CopilotSkillDir"
+    Install-SkillFiles $CopilotSkillDir
+    # Remove any legacy launcher left by older installs so it can't produce a
+    # duplicate /codebase-audit autocomplete entry.
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $CopilotPromptsDir "$SkillName.prompt.md")
+}
+
+function Install-Claude {
+    Write-Host "[claude]"
+    Write-Host "  skill dir:     $ClaudeSkillDir"
+    Write-Host "  commands dir:  $ClaudeCommandsDir"
+    Install-SkillFiles $ClaudeSkillDir
+    # Top-level command
+    $topCmd = Join-Path $ScriptDir "claude\commands\$SkillName.md"
+    if (Test-Path $topCmd) {
+        Copy-Template $topCmd (Join-Path $ClaudeCommandsDir "$SkillName.md") $ClaudeSkillDir
+    }
+    # Namespaced sub-commands
+    $subDir = Join-Path $ScriptDir "claude\commands\$SkillName"
+    if (Test-Path $subDir) {
+        foreach ($f in Get-ChildItem -File -Filter '*.md' -Path $subDir) {
+            Copy-Template $f.FullName (Join-Path $ClaudeCommandsDir "$SkillName\$($f.Name)") $ClaudeSkillDir
+        }
+    }
+}
+
+function Uninstall-SkillDir {
+    param([string]$Target)
+    if (Test-Path $Target) {
+        $absTarget = (Resolve-Path $Target).Path
+        if ($absTarget -ne $ScriptDir) {
+            Write-Host "  removing $Target"
+            Remove-Item -Recurse -Force $Target
+            return
+        }
+    }
+    Write-Host "  (skipping $Target — does not exist OR is the source dir)"
+}
+
+function Uninstall-Copilot {
+    Write-Host "[copilot] uninstalling"
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $CopilotPromptsDir "$SkillName.prompt.md")
+    Uninstall-SkillDir $CopilotSkillDir
+}
+
+function Uninstall-Claude {
+    Write-Host "[claude] uninstalling"
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $ClaudeCommandsDir "$SkillName.md")
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $ClaudeCommandsDir $SkillName)
+    Uninstall-SkillDir $ClaudeSkillDir
+}
+
+# ---- run ----
+Write-Host "Targets: $($Targets -join ' ')"
+Write-Host ""
+
+if ($Uninstall) {
+    foreach ($t in $Targets) {
+        switch ($t) {
+            'copilot' { Uninstall-Copilot }
+            'claude'  { Uninstall-Claude }
+        }
+    }
+    Write-Host ""
+    Write-Host "Uninstalled."
+    exit 0
+}
+
+foreach ($t in $Targets) {
+    switch ($t) {
+        'copilot' { Install-Copilot }
+        'claude'  { Install-Claude }
+    }
+}
+
+Write-Host ""
+Write-Host "Done."
+if ($Targets -contains 'copilot') {
+    Write-Host ""
+    Write-Host "Copilot Chat (VS Code): reload window, then type '/codebase-audit'."
+    Write-Host "  For a specific phase: '/codebase-audit recon' (or deploy / audit /"
+    Write-Host "  fpcheck / verify <ids> / report)."
+}
+if ($Targets -contains 'claude') {
+    Write-Host ""
+    Write-Host "Claude Code CLI: '/codebase-audit', '/codebase-audit:recon', :deploy, :audit,"
+    Write-Host "  :fpcheck, :verify <ids>, :report"
+    Write-Host "  (Claude also auto-loads the skill from ~/.claude/skills/$SkillName/ based"
+    Write-Host "   on description triggers, e.g. 'audit this app'.)"
+}
