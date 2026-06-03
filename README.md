@@ -69,7 +69,7 @@ Includes a coverage matrix (every group, every CVE, every finding) and a section
    Batches findings and spawns FP-review subagents. Output: `cba_fp_verdicts` and per-batch artifacts. The orchestrator surfaces the TP-only list and asks you to open verify forks.
 
 6. **Verify** — open one forked chat per ~5–8 findings.
-   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts directly to `reports/audit-<timestamp>/artifacts/`. **You don't need to paste anything back to the orchestrator.** The verify command refuses to run without IDs — there is no "orchestrator verify" mode.
+   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts directly to `reports/audit-<timestamp>/artifacts/`, then **adversarially reviews** each CONFIRMED finding with fresh, unbiased subagents — real-bug / valid-PoC / intentionally-vulnerable-or-test-code lenses, with the auditor's own conclusion withheld from them (on Claude Code, an optional agent-team can debate counter-opinions) — reconciles any dispute, and records the outcome in the artifact. **You don't need to paste anything back to the orchestrator.** The verify command refuses to run without IDs — there is no "orchestrator verify" mode.
 
 7. **Report** — once all forks have written their artifacts, run `/codebase-audit:report` on the orchestrator. Its first step ingests every `verify-<id>.md` from disk, reconciles against the TP list, and **refuses to continue if any TP is missing an artifact** (it will surface the missing IDs and offer a ready-to-paste fork prompt). When the inventory is complete, it writes `report.md` + `disclosure-summary.md` and stops at a user gate before any disclosure.
 
@@ -235,6 +235,7 @@ The launcher templates in `prompts/` and `claude/commands/` are tracked in git a
 - **Memory-persistent across compactions**: every phase rewrites a resume note in session memory and a live-instance note in repo memory.
 - **`general-purpose` subagents only** for write-needed work — `Explore` agents are read-only and silently produce no artifacts (a real-audit lesson).
 - **FP-check is static, verify is live** — separated so "I couldn't reproduce" handwaves don't kill real source-level bugs.
+- **Adversarial review in-fork** — after the PoCs, each verify fork re-tests its own findings with fresh, unbiased subagents (the auditor's conclusion is withheld from them), catching bias and intentionally-vulnerable/test code before anything reaches the report.
 - **Patch-bypass mining** — for every prior CVE, fetch the patch diff and check sibling files for the same root cause untouched. Highest-value class in practice.
 - **No content duplication inside a client install** — launchers are tiny routing stubs; the audit logic lives only in `workflows/` and `SKILL.md`.
 
