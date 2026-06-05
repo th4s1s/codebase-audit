@@ -50,7 +50,7 @@ Count files per language. Report primary and secondary languages.
 
 ### 3. User Confirmation Prompts
 
-Choose the appropriate prompt based on what was detected. Always ask the user to choose (see SKILL.md → *Cross-client tool mapping*) — never assume.
+Choose the appropriate prompt based on what was detected. Always ask the user to choose (see SKILL.md → *Cross-client tool mapping*) — never assume. *(Automated `source` mode: do **not** show these prompts — auto-select the **source** target, even when IDA is also detected, and abort only if there is no source at all; see [../workflows/source.md](../workflows/source.md).)*
 
 **Both detected:**
 > I found source code at `{path}` ({language}, {count} files) and IDA Pro MCP connected to `{binary}` on port {port}.

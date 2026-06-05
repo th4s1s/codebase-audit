@@ -24,7 +24,7 @@ Follow [../references/phase0-source-detection.md](../references/phase0-source-de
 
 1. Probe IDA Pro MCP (`mcp_ida-pro-mcp_list_instances`).
 2. Scan workspace for source-code indicators (build files, common dirs).
-3. Ask the user to choose the appropriate prompt variant (see SKILL.md → *Cross-client tool mapping*).
+3. Ask the user to choose the appropriate prompt variant (see SKILL.md → *Cross-client tool mapping*). *(Automated `source` mode: auto-select the **source** target without asking; abort if the target is binary/IDA-only — see [source.md](source.md).)*
 4. Insert into `cba_sources`.
 
 ## Step 3 — Reconnaissance
@@ -51,7 +51,7 @@ Based on codebase size (see [../references/phase2-feature-mapping.md](../referen
 
 Use the naming convention `G1…Gn` with stable IDs (so subagent outputs and SQL rows align).
 
-Present the groups and ask the user to confirm (see SKILL.md → *Cross-client tool mapping*): "I've identified N feature groups. [list]. Should I proceed?" with options `["Looks good — proceed", "Let me adjust the groups"]`.
+Present the groups and ask the user to confirm (see SKILL.md → *Cross-client tool mapping*): "I've identified N feature groups. [list]. Should I proceed?" with options `["Looks good — proceed", "Let me adjust the groups"]`. *(Automated `source` mode: auto-accept the proposed groups without asking — see [source.md](source.md).)*
 
 Insert approved groups into `cba_feature_groups` (status='pending').
 
@@ -89,6 +89,8 @@ Use [../references/resume-note-template.md](../references/resume-note-template.m
 
 ## Step 7 — USER GATE
 
+> _Automated `source` mode supersedes this gate — write the resume note and proceed to the audit phase without pausing (see [source.md](source.md))._
+
 Present:
 
 > Reconnaissance + feature mapping complete. N groups mapped with M total security observations. Resume note saved.
@@ -99,7 +101,7 @@ Present:
 >
 > **Before continuing, run a manual compact** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). The resume note + SQL state + per-group mapping artifacts are already on disk, so compacting now is lossless.
 
-Do NOT auto-advance.
+Do NOT auto-advance. *(Exception: automated `source` mode auto-advances through this gate — see [source.md](source.md).)*
 
 ## Quality Checks
 

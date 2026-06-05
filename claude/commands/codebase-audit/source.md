@@ -1,0 +1,10 @@
+---
+description: "Codebase audit — automated source-only audit (recon → audit → fpcheck → report; no deploy/live-instance/verify; unattended, report-only)."
+argument-hint: "[optional: focus area or notes]"
+---
+
+Run the **automated source-only audit** of the codebase-audit skill — the full pipeline on source code with **no live instance and no human in the loop**.
+
+Optional user note: $ARGUMENTS
+
+Read @__SKILL_DIR__/SKILL.md, then execute @__SKILL_DIR__/workflows/source.md end-to-end: **recon → audit → fpcheck → report**, auto-proceeding through every phase (no user gates), source-only (no deploy, no live PoC, no verify). Honor the precedence rules at the top of source.md. Produce the consolidated report (`report.md` + `disclosure-summary.md` + `audit.db`), print a counts-by-severity summary, and stop. Do not perform any external disclosure.

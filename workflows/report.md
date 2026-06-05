@@ -31,6 +31,9 @@ This step is the canonical "orchestrator reads what the forks produced" — ther
 | … | … | … | … | … |
 
 6. **Gate**: if any TP row is `MISSING` AND has no documented "infra-blocked" justification in the resume note, **STOP and ask the user**:
+
+   > _Automated `source` mode: verification was intentionally skipped for **all** TPs (no live instance) — treat every TP as an explicit source-only skip, tag each `(source-only — not live-verified)`, and proceed without stopping. See [source.md](source.md)._
+
    - Open another fork for the missing IDs (recommended), OR
    - Explicitly skip (the finding will be tagged `(source-only — not live-verified)` in the report).
 
@@ -107,6 +110,8 @@ This is the file you send when filing GHSA / contacting `security@…`.
 
 ## Step 6 — Final quality checks
 
+> _Automated `source` mode: every finding is tagged `(source-only — not live-verified)`; the verify-fork / "infra-blocked" wording in the first check and the "PoCs reproducible against the live instance" check below do **not** apply (there is no live instance). See [source.md](source.md)._
+
 - [ ] Every finding in `report.md` is either CONFIRMED via verify-fork OR explicitly tagged as `(source-only — infra-blocked: <reason>)`
 - [ ] No REFUTED findings appear in the body (only in FP Analysis section)
 - [ ] All file:line references resolve in the target repo at the audited commit
@@ -117,6 +122,8 @@ This is the file you send when filing GHSA / contacting `security@…`.
 - [ ] Patch-bypass findings explicitly cite the prior CVE/GHSA
 
 ## Step 7 — USER GATE (before disclosure)
+
+> _Automated `source` mode supersedes this gate — write the report + disclosure summary, print the severity-counts summary, and stop. Do **not** perform any external disclosure (see [source.md](source.md))._
 
 Present:
 

@@ -93,11 +93,13 @@ Rewrite the resume note with:
 
 - Phase status: recon/deploy/audit/fpcheck DONE; **verify IN PROGRESS via FORKED conversations**
 - Final verdict tally (TP / FP / DUP counts)
-- **List which findings already have live-PoC** (from `cba_findings.verified='live-poc'` carried over from audit phase, plus any new live-PoC captured by FP-check artifacts) — these do NOT need a verify fork
+- **List which findings already have live-PoC** (from `cba_findings.verified='live-poc'` carried over from audit phase, plus any new live-PoC captured by FP-check artifacts) — these do NOT need a verify fork *(Automated `source` mode: there is no live-PoC and no verify fork — record all TPs as source-only and skip the fork inventory / fork prompt; see [source.md](source.md))*
 - **Fork inventory table** for the remaining source-only TPs: which findings each fork should cover (~5-8 per fork; group by feature affinity)
 - The **fork prompt template** ready to paste (see [verify.md](verify.md))
 
 ## Step 8 — USER GATE
+
+> _Automated `source` mode supersedes this gate — skip the verify forks and proceed straight to report without pausing (see [source.md](source.md))._
 
 Present:
 

@@ -50,6 +50,17 @@ Each fork covers ~5–8 findings so HTTP noise doesn't bloat the orchestrator's 
 
 Includes a coverage matrix (every group, every CVE, every finding) and a section listing INCONCLUSIVE findings with the required operator action.
 
+## Automated source-only run (`source`)
+
+For product teams who just want a **security report on their source before a release** — no live instance, no human in the loop — there's a composite **`source`** run that chains **recon → audit → fpcheck → report** unattended:
+
+- Skips `deploy` and `verify` (no live instance, no live PoC).
+- Auto-proceeds through every user gate; auto-accepts source detection and the feature-group split.
+- CVE / patch-bypass ingest is best-effort (continues if the network is unavailable).
+- Produces the usual `report.md` + `disclosure-summary.md` + `audit.db` under `reports/audit-<timestamp>/`, with a clear caveat that findings are **static (source-level) true-positives that were NOT live-verified** — run the interactive `verify` phase against a live instance before any external disclosure.
+
+See [`workflows/source.md`](workflows/source.md) for the exact per-phase overrides and the [Usage](#usage) section for how to invoke it on each client.
+
 ## Typical audit walkthrough
 
 1. **Open the target project's workspace** in VS Code (or `cd` into it for Claude / Codex CLI).
@@ -204,11 +215,33 @@ $codebase-audit
 
 Pass the phase inline (`$codebase-audit audit`), or trigger by free-text phrase (*"audit this app"*, *"find vulnerabilities in this project"*) — Codex loads the skill into context by its description, so the explicit `$codebase-audit` invocation is optional. Use `/skills` to confirm it is installed. Manual compaction between phases is `/compact` (same as Claude Code).
 
+### Automated source-only audit (`source`)
+
+A single command runs the whole pipeline **unattended and source-only** — for product teams scanning a codebase before release (see [Automated source-only run](#automated-source-only-run-source) above for what it does).
+
+| Client | Invoke |
+|---|---|
+| Claude Code CLI | `/codebase-audit:source` |
+| GitHub Copilot Chat | `/codebase-audit source` |
+| OpenAI Codex CLI | `$codebase-audit source` |
+| Free-text (any) | "run the automated source-only audit" |
+
+It runs **recon → audit → fpcheck → report** with no gates and no live instance, then writes `report.md` + `disclosure-summary.md` + `audit.db` and prints a counts-by-severity summary. Findings are **source-only (not live-verified)** — the report says so, and recommends the `verify` phase before disclosure.
+
+**Headless / unattended** (e.g. a scheduled scan on a runner — note it only *produces a report*, it does not gate a build):
+
+```bash
+claude -p "/codebase-audit:source"        # Claude Code CLI, non-interactive
+codex exec '$codebase-audit source'       # OpenAI Codex CLI, non-interactive
+```
+
+(Copilot Chat runs it interactively in VS Code; it has no headless print mode.)
+
 ### Differences at a glance
 
 | Aspect | Copilot Chat | Claude Code CLI | Codex CLI |
 |---|---|---|---|
-| Invocation surface | One: `/codebase-audit` (phase as argument) | Seven: `/codebase-audit[:phase]` | One: `$codebase-audit` (phase as argument) |
+| Invocation surface | One: `/codebase-audit` (phase as argument) | Eight: `/codebase-audit[:phase]` (incl. `:source`) | One: `$codebase-audit` (phase as argument) |
 | Sub-command autocomplete | ❌ not supported | ✅ via `commands/<name>/<sub>.md` | ❌ not supported |
 | Skill auto-load by description | ✅ via user-level skills index | ✅ via `~/.claude/skills/<name>/SKILL.md` | ✅ via `~/.codex/skills/<name>/SKILL.md` |
 | Argument passing | `${input:phase:...}` prompt or inline | `$ARGUMENTS` substitution | free-text after `$codebase-audit` |
@@ -230,7 +263,8 @@ codebase-audit/                 # this repo (the clone)
 │   ├── audit.md
 │   ├── fpcheck.md
 │   ├── verify.md
-│   └── report.md
+│   ├── report.md
+│   └── source.md             # composite: automated source-only run
 ├── references/
 │   ├── phase0-source-detection.md
 │   ├── phase2-feature-mapping.md
@@ -248,7 +282,8 @@ codebase-audit/                 # this repo (the clone)
         ├── audit.md
         ├── fpcheck.md
         ├── verify.md
-        └── report.md
+        ├── report.md
+        └── source.md
 ```
 
 After `./install.sh` (all targets), the *installed* state looks like:
@@ -257,7 +292,7 @@ After `./install.sh` (all targets), the *installed* state looks like:
 ~/.copilot/skills/codebase-audit/        # Copilot skill copy
 ~/.claude/skills/codebase-audit/         # Claude skill copy (independent)
 ~/.claude/commands/codebase-audit.md
-~/.claude/commands/codebase-audit/{recon,deploy,audit,fpcheck,verify,report}.md
+~/.claude/commands/codebase-audit/{recon,deploy,audit,fpcheck,verify,report,source}.md
 ~/.codex/skills/codebase-audit/          # Codex skill copy (independent)
 ```
 

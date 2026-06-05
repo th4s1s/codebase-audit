@@ -88,6 +88,8 @@ Priority order by typical severity:
 
 ## If a Test Instance is Available
 
+> _Automated `source` mode: there is **no** test instance — skip this entire block, do not attempt live verification, and the only legal `verified` value is `source-only` (never `live-poc`). See [../workflows/source.md](../workflows/source.md)._
+
 For HIGH/CRITICAL findings, attempt live verification:
 - Craft the HTTP request or payload
 - Send it using curl, requests, or raw sockets

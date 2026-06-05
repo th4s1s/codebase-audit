@@ -100,7 +100,7 @@ Each subagent prompt (template from [../references/phase4-deep-audit.md](../refe
 - **Instructions to write a per-group artifact** at `<AUDIT_DIR>/artifacts/G<n>-findings.md` containing each finding in detail (so we can re-read after context compaction)
 - **Instructions to INSERT each finding into `cba_findings`** with `artifact_path` set
 - Live-PoC verification policy: attempt live PoC for HIGH/CRITICAL findings when feasible; mark `verified='live-poc'` if reproduced; otherwise `verified='source-only'`
-- Live-instance hygiene: **back up any config file before editing** (e.g., `cp .docker_compose/rules.json /tmp/rules.json.bak.G<n>`); restore at end
+- Live-instance hygiene: **back up any config file before editing** (e.g., `cp .docker_compose/rules.json /tmp/rules.json.bak.G<n>`); restore at end *(Automated `source` mode: omit this bullet — no config edits/backup/restore; read-only source analysis only, see [source.md](source.md))*
 - Confidence floor: don't file anything below 8/10
 - Return a compact summary (counts by severity)
 
@@ -135,6 +135,8 @@ Rewrite the resume note ([../references/resume-note-template.md](../references/r
 - Updated "Quirks to remember"
 
 ## Step 8 — USER GATE
+
+> _Automated `source` mode supersedes this gate — proceed straight to fpcheck without pausing (see [source.md](source.md))._
 
 Present:
 

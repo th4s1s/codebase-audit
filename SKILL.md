@@ -7,10 +7,12 @@ description: >-
   source code, IDA Pro MCP (binary reverse engineering), or both. Triggers on
   'audit this app', 'security audit this codebase', 'find vulnerabilities in
   this project', 'run the codebase audit', '/codebase-audit', or any phase
-  reference like 'run the recon phase' / 'run the fpcheck phase'. On Claude
+  reference like 'run the recon phase' / 'run the fpcheck phase', or
+  'automated source-only audit' / 'scan the source before release' (the
+  unattended source-only run). On Claude
   Code CLI also triggers on '/codebase-audit:recon', '/codebase-audit:deploy',
   '/codebase-audit:audit', '/codebase-audit:fpcheck', '/codebase-audit:verify',
-  '/codebase-audit:report' (Copilot Chat and OpenAI Codex CLI do not support
+  '/codebase-audit:report', '/codebase-audit:source' (Copilot Chat and OpenAI Codex CLI do not support
   namespaced slash commands — pass the phase as an argument, e.g.
   '/codebase-audit recon', or in Codex '$codebase-audit recon').
   NOT for single-file review (use code-reviewer), quick scans (use semgrep),
@@ -43,7 +45,7 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 ## Sub-Command Router
 
-The skill supports six phases. User can invoke them individually after the prior phase is complete, or run the full pipeline.
+The skill supports six phases (invoke them individually after the prior phase completes, or run the full pipeline), plus an automated **`source`** run that chains recon → audit → fpcheck → report unattended for source-only scans.
 
 ### Phase → workflow mapping
 
@@ -55,8 +57,11 @@ The skill supports six phases. User can invoke them individually after the prior
 | `fpcheck` | [workflows/fpcheck.md](workflows/fpcheck.md) | **Parallel FP-check subagents** apply Hard Exclusions / Precedent rules / Marginal Gain Test — **static review only**, no live testing; write resume note | Audit done | `cba_fp_verdicts` populated; per-batch `artifacts/phase5-batch<X>.md`; resume note updated |
 | `verify` | [workflows/verify.md](workflows/verify.md) | **Runs in a forked conversation**, requires finding-ID list. Per-finding live-instance PoC, then **adversarial review by fresh subagents** (Step 2); writes `artifacts/verify-<finding-id>.md`. Refuses to run without IDs. | FP-check produced TPs; user has opened a fork and passed `<ids>` (or pasted the orchestrator's fork prompt). | One verify artifact per finding in scope; CONFIRMED / REFUTED / INCONCLUSIVE, each adversarially reviewed (bias / intentionally-vulnerable-code checks). |
 | `report` | [workflows/report.md](workflows/report.md) | Runs in the orchestrator. **Step 1 ingests every `verify-<id>.md` from disk** and refuses to continue if any TP is missing an artifact (or explicit skip). Then writes consolidated `report.md` + vendor-facing `disclosure-summary.md`. | All verify forks finished (or explicitly skipped); orchestrator-side. | `report.md`, `disclosure-summary.md`, updated `cba_fp_verdicts.final_id`. |
+| `source` | [workflows/source.md](workflows/source.md) | **Automated source-only run** (composite): chains recon → audit → fpcheck → report **unattended** — no deploy, no live instance, no verify, **no user gates**. For product teams scanning a codebase before release. CVE ingest best-effort. | Fresh start; source tree present; no human supervision wanted | `report.md` + `disclosure-summary.md` + `audit.db`; all findings `verified='source-only'` (not live-verified) |
 
 **Full pipeline mode**: orchestrator runs recon → deploy → audit → fpcheck → user opens forks → report. Each transition is gated.
+
+**Automated source-only mode**: the **`source`** run does the recon → audit → fpcheck → report chain **unattended and without a live instance** — every gate auto-proceeds, deploy and verify are skipped, and it ends by writing the report (see [workflows/source.md](workflows/source.md)).
 
 ### How phases are invoked per client
 
@@ -66,6 +71,8 @@ The skill supports six phases. User can invoke them individually after the prior
 | **Claude Code CLI** | `/codebase-audit` | `/codebase-audit:recon`, `/codebase-audit:deploy`, `/codebase-audit:audit`, `/codebase-audit:fpcheck`, `/codebase-audit:verify <ids>`, `/codebase-audit:report` |
 | **OpenAI Codex CLI** | `$codebase-audit` | `$codebase-audit recon` / `deploy` / `audit` / `fpcheck` / `verify <ids>` / `report` — like Copilot, Codex has no namespaced slash commands, so the phase is passed as a free-text argument after the skill invocation. |
 | **Free-text** (any) | "audit this app" | "run the codebase-audit recon phase" |
+
+**Automated source-only run:** invoke the **`source`** command (Claude `/codebase-audit:source`; Copilot `/codebase-audit source`; Codex `$codebase-audit source`; or free-text "run the automated source-only audit") to chain recon → audit → fpcheck → report **unattended** with no live instance — see [workflows/source.md](workflows/source.md).
 
 ### Cross-client tool mapping
 
@@ -113,6 +120,8 @@ recon ──► deploy ──► audit ──► fpcheck ──► [open N forks
                        SQLite audit.db (single source of truth)
                        reports/audit-<timestamp>/artifacts/*.md
 ```
+
+The automated **`source`** run uses the same diagram **minus deploy and the verify forks**: recon → audit → fpcheck → report, unattended (see [workflows/source.md](workflows/source.md)).
 
 ## Quick Reference
 
@@ -202,6 +211,7 @@ To begin, route to the appropriate workflow:
 
 - "audit this app" or no specific sub-command → start with [workflows/recon.md](workflows/recon.md)
 - A specific-phase invocation (per *How phases are invoked per client* — Claude `/codebase-audit:<phase>`, Copilot `/codebase-audit <phase>`, Codex `$codebase-audit <phase>`) → load `workflows/<phase>.md` and execute
+- The `source` run / "automated source-only audit" → load [workflows/source.md](workflows/source.md) and run recon → audit → fpcheck → report unattended (no deploy, no live instance, no verify, no user gates)
 
 ## Phase Reference Index (technical details for sub-workflows)
 
@@ -225,3 +235,5 @@ To begin, route to the appropriate workflow:
 - [ ] Every TRUE_POSITIVE has either a `verify-<id>.md` artifact OR a documented "infra-blocked, source-only" reason
 - [ ] Final `report.md` exists with verified findings only, ordered by severity
 - [ ] Resume note exists and reflects current state (would let a fresh orchestrator resume cleanly)
+
+**For the automated `source` run:** the *live instance* (line 2) and *verify artifact* (line 5) criteria do **not** apply — deploy and verify are skipped. Instead: every TRUE_POSITIVE is `verified='source-only'`; `report.md` + `disclosure-summary.md` carry the not-live-verified caveat; and the final severity-counts summary was printed.
