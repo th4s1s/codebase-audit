@@ -1,23 +1,28 @@
 #requires -Version 5.1
 <#
-install.ps1 — Install the codebase-audit skill for GitHub Copilot Chat and/or
-Claude Code CLI on Windows (PowerShell). Native equivalent of install.sh.
+install.ps1 — Install the codebase-audit skill for GitHub Copilot Chat,
+Claude Code CLI, and/or OpenAI Codex CLI on Windows (PowerShell). Native
+equivalent of install.sh.
 
 Design: each client gets its OWN self-contained copy of the skill.
   - Copilot install root: $HOME\.copilot\skills\codebase-audit\
   - Claude install root:  $HOME\.claude\skills\codebase-audit\
       launchers:          $HOME\.claude\commands\codebase-audit.md
                           $HOME\.claude\commands\codebase-audit\*.md
+  - Codex install root:   $env:CODEX_HOME\skills\codebase-audit\
+                          (defaults to $HOME\.codex when CODEX_HOME is unset)
 
-Claude launchers contain the literal string __SKILL_DIR__; this script
+Copilot and Codex auto-discover the skill from their skills dir — no launcher
+files. Claude launchers contain the literal string __SKILL_DIR__; this script
 substitutes it with the client's own skill dir (in forward-slash form, which
 Claude Code accepts on Windows) so each set of launchers points at its own copy.
-Installing one client does not touch the other.
+Installing one client does not touch the others.
 
 Usage:
-  .\install.ps1                 # install for both clients
+  .\install.ps1                 # install for all clients
   .\install.ps1 copilot         # only Copilot Chat
   .\install.ps1 claude          # only Claude Code CLI
+  .\install.ps1 codex           # only Codex CLI
   .\install.ps1 -Insiders       # use VS Code Insiders paths
   .\install.ps1 -Uninstall      # remove the selected clients' launchers
                                 #   AND their skill install dirs
@@ -39,18 +44,22 @@ $ScriptDir = $PSScriptRoot
 $SkillName = 'codebase-audit'
 
 # ---- resolve targets ----
-$valid = @('copilot', 'claude', 'all')
+$valid = @('copilot', 'claude', 'codex', 'all')
 if (-not $Targets -or $Targets.Count -eq 0) { $Targets = @('all') }
 foreach ($t in $Targets) {
-    if ($valid -notcontains $t) { Write-Error "Unknown arg: $t (use copilot | claude | all)"; exit 1 }
+    if ($valid -notcontains $t) { Write-Error "Unknown arg: $t (use copilot | claude | codex | all)"; exit 1 }
 }
-if ($Targets -contains 'all') { $Targets = @('copilot', 'claude') }
+if ($Targets -contains 'all') { $Targets = @('copilot', 'claude', 'codex') }
 $Targets = @($Targets | Select-Object -Unique)
 
 # ---- per-client paths ----
 $CopilotSkillDir   = Join-Path $HOME ".copilot\skills\$SkillName"
 $ClaudeSkillDir    = Join-Path $HOME ".claude\skills\$SkillName"
 $ClaudeCommandsDir = Join-Path $HOME ".claude\commands"
+# Codex honors $env:CODEX_HOME (defaults to ~/.codex) and auto-discovers skills
+# under its skills\ dir. (.system\ is reserved for Codex's bundled skills.)
+$CodexHome         = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$CodexSkillDir     = Join-Path $CodexHome "skills\$SkillName"
 
 function Get-CopilotPromptsDir {
     $codeDir = if ($Insiders) { 'Code - Insiders' } else { 'Code' }
@@ -127,6 +136,13 @@ function Install-Claude {
     }
 }
 
+function Install-Codex {
+    Write-Host "[codex]"
+    Write-Host "  skill dir:     $CodexSkillDir"
+    # Codex auto-discovers the skill by its SKILL.md description — no launcher.
+    Install-SkillFiles $CodexSkillDir
+}
+
 function Uninstall-SkillDir {
     param([string]$Target)
     if (Test-Path $Target) {
@@ -153,6 +169,11 @@ function Uninstall-Claude {
     Uninstall-SkillDir $ClaudeSkillDir
 }
 
+function Uninstall-Codex {
+    Write-Host "[codex] uninstalling"
+    Uninstall-SkillDir $CodexSkillDir
+}
+
 # ---- run ----
 Write-Host "Targets: $($Targets -join ' ')"
 Write-Host ""
@@ -162,6 +183,7 @@ if ($Uninstall) {
         switch ($t) {
             'copilot' { Uninstall-Copilot }
             'claude'  { Uninstall-Claude }
+            'codex'   { Uninstall-Codex }
         }
     }
     Write-Host ""
@@ -173,6 +195,7 @@ foreach ($t in $Targets) {
     switch ($t) {
         'copilot' { Install-Copilot }
         'claude'  { Install-Claude }
+        'codex'   { Install-Codex }
     }
 }
 
@@ -190,4 +213,11 @@ if ($Targets -contains 'claude') {
     Write-Host "  :fpcheck, :verify <ids>, :report"
     Write-Host "  (Claude also auto-loads the skill from ~/.claude/skills/$SkillName/ based"
     Write-Host "   on description triggers, e.g. 'audit this app'.)"
+}
+if ($Targets -contains 'codex') {
+    Write-Host ""
+    Write-Host "Codex CLI: restart Codex (or run '/skills'), then invoke with '`$$SkillName'."
+    Write-Host "  For a specific phase, pass it as an argument: '`$$SkillName recon' (or deploy /"
+    Write-Host "  audit / fpcheck / verify <ids> / report). Codex also auto-loads the skill from"
+    Write-Host "  $CodexSkillDir based on description triggers."
 }

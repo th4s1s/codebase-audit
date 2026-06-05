@@ -50,7 +50,7 @@ Count files per language. Report primary and secondary languages.
 
 ### 3. User Confirmation Prompts
 
-Choose the appropriate prompt based on what was detected. Always use `ask_user` — never assume.
+Choose the appropriate prompt based on what was detected. Always ask the user to choose (see SKILL.md → *Cross-client tool mapping*) — never assume.
 
 **Both detected:**
 > I found source code at `{path}` ({language}, {count} files) and IDA Pro MCP connected to `{binary}` on port {port}.

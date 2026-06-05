@@ -141,7 +141,7 @@ This audit used a parallel feature-mapped approach:
 1. Source detection and reconnaissance
 2. Feature mapping via {N} parallel subagents
 3. Deep vulnerability hunting via {N} parallel subagents
-4. False-positive verification using the fp-check-pivot methodology
+4. False-positive verification using the bundled FP-check methodology
 5. Report generation
 
 ### Feature Groups Audited

@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# install.sh — Install the codebase-audit skill for GitHub Copilot Chat and/or
-# Claude Code CLI.
+# install.sh — Install the codebase-audit skill for GitHub Copilot Chat,
+# Claude Code CLI, and/or OpenAI Codex CLI.
 #
 # Design: each client gets its OWN self-contained copy of the skill.
 #   - Copilot install root: ~/.copilot/skills/codebase-audit/
 #   - Claude install root:  ~/.claude/skills/codebase-audit/
 #       launchers:          ~/.claude/commands/codebase-audit.md
 #                           ~/.claude/commands/codebase-audit/*.md
+#   - Codex install root:   ${CODEX_HOME:-~/.codex}/skills/codebase-audit/
 #
-# Claude launchers contain the literal string __SKILL_DIR__; install.sh
+# Copilot and Codex auto-discover the skill from their skills dir — no launcher
+# files. Claude launchers contain the literal string __SKILL_DIR__; install.sh
 # sed-substitutes it with the client's own SKILL_DIR so each set of launchers
-# points at its own copy. Installing one client does not touch the other.
+# points at its own copy. Installing one client does not touch the others.
 #
 # Usage:
-#   ./install.sh                  # install for both clients
+#   ./install.sh                  # install for all clients
 #   ./install.sh copilot          # only Copilot Chat
 #   ./install.sh claude           # only Claude Code CLI
+#   ./install.sh codex            # only Codex CLI
 #   ./install.sh --insiders       # use VS Code Insiders paths
 #   ./install.sh --uninstall      # remove the selected clients' launchers
 #                                 # AND their skill install dirs
@@ -32,22 +35,25 @@ UNINSTALL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    copilot|claude|all) TARGETS+=("$1"); shift ;;
+    copilot|claude|codex|all) TARGETS+=("$1"); shift ;;
     --insiders) INSIDERS=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]] || [[ " ${TARGETS[*]} " == *" all "* ]]; then
-  TARGETS=(copilot claude)
+  TARGETS=(copilot claude codex)
 fi
 
 # ---- per-client paths ----
 COPILOT_SKILL_DIR="${HOME}/.copilot/skills/${SKILL_NAME}"
 CLAUDE_SKILL_DIR="${HOME}/.claude/skills/${SKILL_NAME}"
 CLAUDE_COMMANDS_DIR="${HOME}/.claude/commands"
+# Codex honors $CODEX_HOME (defaults to ~/.codex) and auto-discovers skills under
+# its skills/ dir. (.system/ is reserved for Codex's bundled skills — never used.)
+CODEX_SKILL_DIR="${CODEX_HOME:-${HOME}/.codex}/skills/${SKILL_NAME}"
 
 detect_copilot_prompts_dir() {
   local code_dir
@@ -140,6 +146,13 @@ install_claude() {
   fi
 }
 
+install_codex() {
+  echo "[codex]"
+  echo "  skill dir:     ${CODEX_SKILL_DIR}"
+  # Codex auto-discovers the skill by its SKILL.md description — no launcher.
+  install_skill_files "${CODEX_SKILL_DIR}"
+}
+
 uninstall_skill_dir() {
   local target="$1"
   local abs_target
@@ -165,6 +178,11 @@ uninstall_claude() {
   uninstall_skill_dir "${CLAUDE_SKILL_DIR}"
 }
 
+uninstall_codex() {
+  echo "[codex] uninstalling"
+  uninstall_skill_dir "${CODEX_SKILL_DIR}"
+}
+
 # ---- run ----
 echo "Targets: ${TARGETS[*]}"
 echo
@@ -174,6 +192,7 @@ if [[ "${UNINSTALL}" == "1" ]]; then
     case "$t" in
       copilot) uninstall_copilot ;;
       claude)  uninstall_claude ;;
+      codex)   uninstall_codex ;;
     esac
   done
   echo
@@ -185,6 +204,7 @@ for t in "${TARGETS[@]}"; do
   case "$t" in
     copilot) install_copilot ;;
     claude)  install_claude ;;
+    codex)   install_codex ;;
   esac
 done
 
@@ -202,4 +222,11 @@ if [[ " ${TARGETS[*]} " == *" claude "* ]]; then
   echo "  :fpcheck, :verify <ids>, :report"
   echo "  (Claude also auto-loads the skill from ~/.claude/skills/${SKILL_NAME}/ based"
   echo "   on description triggers, e.g. 'audit this app'.)"
+fi
+if [[ " ${TARGETS[*]} " == *" codex "* ]]; then
+  echo
+  echo "Codex CLI: restart Codex (or run '/skills'), then invoke with '\$${SKILL_NAME}'."
+  echo "  For a specific phase, pass it as an argument: '\$${SKILL_NAME} recon' (or deploy /"
+  echo "  audit / fpcheck / verify <ids> / report). Codex also auto-loads the skill from"
+  echo "  ${CODEX_HOME:-~/.codex}/skills/${SKILL_NAME}/ based on description triggers."
 fi

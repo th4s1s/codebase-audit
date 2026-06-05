@@ -1,6 +1,6 @@
 # codebase-audit
 
-A structured, multi-phase security audit skill that drives parallel subagents through **recon → deploy → audit → fpcheck → verify → report**. Works with both **GitHub Copilot Chat** and **Claude Code CLI**.
+A structured, multi-phase security audit skill that drives parallel subagents through **recon → deploy → audit → fpcheck → verify → report**. Works with **GitHub Copilot Chat**, **Claude Code CLI**, and **OpenAI Codex CLI**.
 
 Codifies hard-won lessons from actual audits (see [`references/lessons-learned.md`](references/lessons-learned.md)).
 
@@ -22,7 +22,7 @@ The pipeline produces a `reports/audit-<timestamp>/` directory containing a SQLi
 Each phase is one file in [`workflows/`](workflows/). Run them individually (recommended on first use, so you understand what each does) or let the full pipeline run them in order with user gates between phases.
 
 ### 1. [`recon`](workflows/recon.md) — source detection + parallel feature mapping
-Detects whether the target is a source tree, an IDA Pro MCP binary, or both, then enumerates the attack surface (HTTP routes, gRPC services, CLI entrypoints, message handlers, file/network sinks). Splits the codebase into **feature groups** (G1, G2, …) and spawns one `general-purpose` subagent per group to produce `files/G<n>-mapping.md`. Populates `cba_feature_groups`, `cba_attack_surface`, `cba_security_observations` in `audit.db`. Ends by writing the resume note to session memory.
+Detects whether the target is a source tree, an IDA Pro MCP binary, or both, then enumerates the attack surface (HTTP routes, gRPC services, CLI entrypoints, message handlers, file/network sinks). Splits the codebase into **feature groups** (G1, G2, …) and spawns one writable subagent per group to produce `files/G<n>-mapping.md`. Populates `cba_feature_groups`, `cba_attack_surface`, `cba_security_observations` in `audit.db`. Ends by writing the resume note to session memory.
 
 ### 2. [`deploy`](workflows/deploy.md) — live-instance setup
 Makes sure a live instance is reachable so later phases have a reproduction target. Supports two modes:
@@ -33,7 +33,7 @@ Makes sure a live instance is reachable so later phases have a reproduction targ
 Either way, produces a single repo-memory artifact `/memories/repo/<project>-live-instance.md` documenting **deployment mode, capabilities, base URLs, the operator-supplied liveness command, off-limits surface**, and (for local-managed) bind-mounted configs and common ops. Every later phase and every verify fork reads this note first.
 
 ### 3. [`audit`](workflows/audit.md) — CVE ingest + patch-bypass mining + parallel deep audit
-Fetches prior CVEs/GHSAs and their patch diffs (populating `cba_known_findings`). For each patch, checks sibling files for the **same root cause left untouched** — historically the highest-yield class of findings. Then spawns one `general-purpose` subagent per feature group to do adversarial source-level audit, populating `cba_findings` and writing per-group `artifacts/G<n>-findings.md`.
+Fetches prior CVEs/GHSAs and their patch diffs (populating `cba_known_findings`). For each patch, checks sibling files for the **same root cause left untouched** — historically the highest-yield class of findings. Then spawns one writable subagent per feature group to do adversarial source-level audit, populating `cba_findings` and writing per-group `artifacts/G<n>-findings.md`.
 
 ### 4. [`fpcheck`](workflows/fpcheck.md) — parallel static false-positive review
 Batches the raw findings (~8–12 per batch) and spawns parallel subagents to apply the **18 Hard Exclusions + 10 Precedent rules + Marginal Gain Test**. Static review only — does not touch the live instance (that's verify's job; separating them keeps "I couldn't reproduce" handwaves from killing real source-level bugs). Populates `cba_fp_verdicts` and writes per-batch `artifacts/phase5-batch<X>.md`.
@@ -52,26 +52,27 @@ Includes a coverage matrix (every group, every CVE, every finding) and a section
 
 ## Typical audit walkthrough
 
-1. **Open the target project's workspace** in VS Code (or `cd` into it for Claude CLI).
+1. **Open the target project's workspace** in VS Code (or `cd` into it for Claude / Codex CLI).
 2. **Start with recon**:
    - Copilot: `/codebase-audit` → type `recon`
    - Claude: `/codebase-audit:recon`
+   - Codex: `$codebase-audit recon`
 
    The orchestrator detects source/IDA, proposes a feature-group split, asks you to confirm, then spawns mapping subagents in parallel. Output: `files/G<n>-mapping.md`, populated SQL tables, resume note.
 
-3. **Deploy** (`/codebase-audit:deploy` or answer `deploy`).
+3. **Deploy** (run the `deploy` phase — see Usage for your client's syntax).
    Tell the orchestrator whether the instance is `local-managed` or `external-provided`. For external, hand it the base URLs, sample auth tokens, off-limits surface, and the exact liveness command the operator considers authoritative. Output: `/memories/repo/<project>-live-instance.md`.
 
-4. **Audit** (`/codebase-audit:audit` or `audit`).
+4. **Audit** (run the `audit` phase).
    Ingests CVEs, mines patch-bypass surfaces, then spawns one deep-audit subagent per group in parallel. Reviews each `artifacts/G<n>-findings.md` as it lands. Output: populated `cba_findings`, per-group artifacts.
 
-5. **FP-check** (`/codebase-audit:fpcheck` or `fpcheck`).
+5. **FP-check** (run the `fpcheck` phase).
    Batches findings and spawns FP-review subagents. Output: `cba_fp_verdicts` and per-batch artifacts. The orchestrator surfaces the TP-only list and asks you to open verify forks.
 
 6. **Verify** — open one forked chat per ~5–8 findings.
-   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (or paste the orchestrator's fork-prompt into Copilot Chat with `verify` as the phase). The fork runs PoCs and writes `verify-<id>.md` artifacts directly to `reports/audit-<timestamp>/artifacts/`, then **adversarially reviews** each CONFIRMED finding with fresh, unbiased subagents — real-bug / valid-PoC / intentionally-vulnerable-or-test-code lenses, with the auditor's own conclusion withheld from them (on Claude Code, an optional agent-team can debate counter-opinions) — reconciles any dispute, and records the outcome in the artifact. **You don't need to paste anything back to the orchestrator.** The verify command refuses to run without IDs — there is no "orchestrator verify" mode.
+   In each fork: `/codebase-audit:verify G1-F1,G1-F2,G2-F5` (Claude); in Codex, open a new conversation (`/new`) and run `$codebase-audit verify G1-F1,G1-F2,G2-F5`; in Copilot Chat, paste the orchestrator's fork-prompt with `verify` as the phase. The fork runs PoCs and writes `verify-<id>.md` artifacts directly to `reports/audit-<timestamp>/artifacts/`, then **adversarially reviews** each CONFIRMED finding with fresh, unbiased subagents — real-bug / valid-PoC / intentionally-vulnerable-or-test-code lenses, with the auditor's own conclusion withheld from them (on Claude Code, an optional agent-team can debate counter-opinions) — reconciles any dispute, and records the outcome in the artifact. **You don't need to paste anything back to the orchestrator.** The verify command refuses to run without IDs — there is no "orchestrator verify" mode.
 
-7. **Report** — once all forks have written their artifacts, run `/codebase-audit:report` on the orchestrator. Its first step ingests every `verify-<id>.md` from disk, reconciles against the TP list, and **refuses to continue if any TP is missing an artifact** (it will surface the missing IDs and offer a ready-to-paste fork prompt). When the inventory is complete, it writes `report.md` + `disclosure-summary.md` and stops at a user gate before any disclosure.
+7. **Report** — once all forks have written their artifacts, run the `report` phase on the orchestrator. Its first step ingests every `verify-<id>.md` from disk, reconciles against the TP list, and **refuses to continue if any TP is missing an artifact** (it will surface the missing IDs and offer a ready-to-paste fork prompt). When the inventory is complete, it writes `report.md` + `disclosure-summary.md` and stops at a user gate before any disclosure.
 
 ### Checking verify progress mid-flight
 
@@ -79,26 +80,24 @@ There is no dedicated "verify status" command — just ask the orchestrator in p
 
 > *"How many verify forks have finished? Which TPs still need a fork?"*
 
-The orchestrator will `ls reports/audit-*/artifacts/verify-*.md`, query the TPs from `cba_fp_verdicts`, and answer with a status table. If you'd rather get the same answer as a hard gate, just run `/codebase-audit:report` — it will print the MISSING list and stop before doing any work if any TP is unverified.
-
-7. **Report** (`/codebase-audit:report` or `report`).
-   Stitches everything into `report.md` + `disclosure-summary.md`. Done.
+The orchestrator will `ls reports/audit-*/artifacts/verify-*.md`, query the TPs from `cba_fp_verdicts`, and answer with a status table. If you'd rather get the same answer as a hard gate, just run the `report` phase — it will print the MISSING list and stop before doing any work if any TP is unverified.
 
 At any point, context compaction is recoverable: every phase rewrites a resume note in `/memories/session/<project>-audit-resume.md`. A fresh orchestrator instance can read it and pick up exactly where the previous one left off.
 
 ### Manually compact between phases
 
-**At every user gate, before saying "go" to the next phase, run a manual compact** (`/compact` in Claude Code CLI; the Compact action in Copilot Chat). The phase you just finished has already written its artifacts to disk and refreshed the resume note, so compacting at that boundary is lossless. Letting auto-compaction fire mid-phase is the most common cause of corrupted audits — it silently drops subagent outputs, dedup decisions, and partial findings that haven't been flushed to SQL yet. Compacting early costs nothing; compacting late costs the phase.
+**At every user gate, before saying "go" to the next phase, run a manual compact** (`/compact` in Claude Code CLI or Codex CLI; the Compact action in Copilot Chat). The phase you just finished has already written its artifacts to disk and refreshed the resume note, so compacting at that boundary is lossless. Letting auto-compaction fire mid-phase is the most common cause of corrupted audits — it silently drops subagent outputs, dedup decisions, and partial findings that haven't been flushed to SQL yet. Compacting early costs nothing; compacting late costs the phase.
 
 ## Install
 
 ```bash
 git clone https://github.com/th4s1s/codebase-audit.git
 cd codebase-audit
-./install.sh                # install for both clients
+./install.sh                # install for all clients
 # or:
 ./install.sh copilot        # Copilot Chat only
 ./install.sh claude         # Claude Code CLI only
+./install.sh codex          # Codex CLI only
 ./install.sh --insiders     # use VS Code Insiders paths
 ./install.sh --uninstall    # remove selected clients' launchers AND skill dirs
 ```
@@ -108,15 +107,16 @@ cd codebase-audit
 ```powershell
 git clone https://github.com/th4s1s/codebase-audit.git
 cd codebase-audit
-.\install.ps1                 # install for both clients
+.\install.ps1                 # install for all clients
 # or:
 .\install.ps1 copilot         # Copilot Chat only
 .\install.ps1 claude          # Claude Code CLI only
+.\install.ps1 codex           # Codex CLI only
 .\install.ps1 -Insiders       # use VS Code Insiders paths
 .\install.ps1 -Uninstall      # remove selected clients' launchers AND skill dirs
 ```
 
-If PowerShell blocks the script, allow it for the session: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`. (`install.sh` also works on Windows under Git Bash / WSL.) On Windows the install roots are the same names under your profile — `%USERPROFILE%\.claude\...` and `%USERPROFILE%\.copilot\...` — and the Claude launchers receive a forward-slash `__SKILL_DIR__` path, which Claude Code accepts.
+If PowerShell blocks the script, allow it for the session: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`. (`install.sh` also works on Windows under Git Bash / WSL.) On Windows the install roots are the same names under your profile — `%USERPROFILE%\.claude\...`, `%USERPROFILE%\.copilot\...`, and `%USERPROFILE%\.codex\...` (or `%CODEX_HOME%\skills\...` if set) — and the Claude launchers receive a forward-slash `__SKILL_DIR__` path, which Claude Code accepts.
 
 ### Where things go
 
@@ -126,6 +126,7 @@ Each client gets its **own self-contained copy** of the skill — installing one
 |---|---|---|
 | **Copilot Chat** | `~/.copilot/skills/codebase-audit/` | _none_ — `SKILL.md` is auto-registered as `/codebase-audit` |
 | **Claude Code CLI** | `~/.claude/skills/codebase-audit/` *(Claude auto-discovers via description triggers)* | `~/.claude/commands/codebase-audit.md` and `~/.claude/commands/codebase-audit/*.md` |
+| **Codex CLI** | `~/.codex/skills/codebase-audit/` (or `$CODEX_HOME/skills/...`) *(Codex auto-discovers via description triggers)* | _none_ — invoked as `$codebase-audit` (like Copilot, no launcher) |
 
 ### How the Claude launchers find the skill
 
@@ -135,7 +136,7 @@ You can `./install.sh claude` on a machine that has no VS Code, and nothing ever
 
 ### Special case: cloning directly into an install dir
 
-If you cloned the repo into one of the per-client skill dirs (e.g. directly into `~/.copilot/skills/codebase-audit/`), the installer detects that and skips the skill-file copy for that target — there's nothing to copy onto itself. The launcher install still happens. To get the skill content into the **other** client's dir, run `./install.sh` with both targets (default) or just that target.
+If you cloned the repo into one of the per-client skill dirs (e.g. directly into `~/.copilot/skills/codebase-audit/`), the installer detects that and skips the skill-file copy for that target — there's nothing to copy onto itself. The launcher install still happens. To get the skill content into the **other** clients' dirs, run `./install.sh` with all targets (default) or just that target.
 
 ## Usage
 
@@ -181,16 +182,38 @@ Claude also auto-loads the skill from `~/.claude/skills/codebase-audit/SKILL.md`
 
 All sub-commands accept `$ARGUMENTS` for optional notes (`/codebase-audit:audit focus on G3`).
 
+### Codex CLI
+
+Codex auto-discovers the skill from `~/.codex/skills/codebase-audit/` (or `$CODEX_HOME/skills/...`). Like Copilot Chat, Codex does **not** expose namespaced per-phase slash commands — there is **one** invocation and you specify the phase as an argument.
+
+After installing, **restart Codex** (or run `/skills`) to pick up the new skill, then invoke it explicitly:
+
+```
+$codebase-audit
+```
+
+| Argument | Phase |
+|---|---|
+| `recon` | source detection + feature mapping |
+| `deploy` | live instance deployment |
+| `audit` | CVE ingest + patch-bypass mining + deep audit |
+| `fpcheck` | static false-positive review |
+| `verify` | per-finding live PoC (run inside a forked session) |
+| `report` | consolidated report + disclosure summary |
+| *(blank or `full`)* | run all phases in order, gating between each |
+
+Pass the phase inline (`$codebase-audit audit`), or trigger by free-text phrase (*"audit this app"*, *"find vulnerabilities in this project"*) — Codex loads the skill into context by its description, so the explicit `$codebase-audit` invocation is optional. Use `/skills` to confirm it is installed. Manual compaction between phases is `/compact` (same as Claude Code).
+
 ### Differences at a glance
 
-| Aspect | Copilot Chat | Claude Code CLI |
-|---|---|---|
-| Slash-command surface | One: `/codebase-audit` (phase as argument) | Seven: `/codebase-audit[:phase]` |
-| Sub-command autocomplete | ❌ not supported | ✅ via `commands/<name>/<sub>.md` |
-| Skill auto-load by description | ✅ via user-level skills index | ✅ via `~/.claude/skills/<name>/SKILL.md` |
-| Argument passing | `${input:phase:...}` prompt or inline | `$ARGUMENTS` substitution |
-| Reload required after install | ✅ Developer: Reload Window | ❌ picked up automatically |
-| File-reference syntax | `[label](path)` markdown links | `@absolute/path` |
+| Aspect | Copilot Chat | Claude Code CLI | Codex CLI |
+|---|---|---|---|
+| Invocation surface | One: `/codebase-audit` (phase as argument) | Seven: `/codebase-audit[:phase]` | One: `$codebase-audit` (phase as argument) |
+| Sub-command autocomplete | ❌ not supported | ✅ via `commands/<name>/<sub>.md` | ❌ not supported |
+| Skill auto-load by description | ✅ via user-level skills index | ✅ via `~/.claude/skills/<name>/SKILL.md` | ✅ via `~/.codex/skills/<name>/SKILL.md` |
+| Argument passing | `${input:phase:...}` prompt or inline | `$ARGUMENTS` substitution | free-text after `$codebase-audit` |
+| Reload required after install | ✅ Developer: Reload Window | ❌ picked up automatically | ✅ restart Codex (or `/skills`) |
+| File-reference syntax | `[label](path)` markdown links | `@absolute/path` | `@path` / markdown links |
 
 ## Layout
 
@@ -217,8 +240,6 @@ codebase-audit/                 # this repo (the clone)
 │   ├── resume-note-template.md
 │   ├── live-instance-template.md
 │   └── lessons-learned.md
-├── prompts/                    # Copilot launcher template (uses __SKILL_DIR__)
-│   └── codebase-audit.prompt.md
 └── claude/commands/            # Claude launcher templates (use __SKILL_DIR__)
     ├── codebase-audit.md
     └── codebase-audit/
@@ -230,26 +251,26 @@ codebase-audit/                 # this repo (the clone)
         └── report.md
 ```
 
-After `./install.sh` (both targets), the *installed* state looks like:
+After `./install.sh` (all targets), the *installed* state looks like:
 
 ```
 ~/.copilot/skills/codebase-audit/        # Copilot skill copy
-~/<vscode-prompts-dir>/codebase-audit.prompt.md
 ~/.claude/skills/codebase-audit/         # Claude skill copy (independent)
 ~/.claude/commands/codebase-audit.md
 ~/.claude/commands/codebase-audit/{recon,deploy,audit,fpcheck,verify,report}.md
+~/.codex/skills/codebase-audit/          # Codex skill copy (independent)
 ```
 
 ## Customizing the launchers
 
-The launcher templates in `prompts/` and `claude/commands/` are tracked in git and free to edit. Every occurrence of the literal string `__SKILL_DIR__` is substituted at install time with the per-client install path. After edits, re-run `./install.sh` to copy the updates into place.
+The launcher templates in `claude/commands/` are tracked in git and free to edit. Every occurrence of the literal string `__SKILL_DIR__` is substituted at install time with the per-client install path. After edits, re-run `./install.sh` to copy the updates into place.
 
 ## Key design choices
 
-- **Per-client self-contained installs**: Copilot stuff under `~/.copilot/`, Claude stuff under `~/.claude/`. Either can be installed alone; neither needs the other's tooling on the machine.
+- **Per-client self-contained installs**: Copilot stuff under `~/.copilot/`, Claude stuff under `~/.claude/`, Codex stuff under `~/.codex/` (or `$CODEX_HOME/`). Any one can be installed alone; none needs the others' tooling on the machine.
 - **Parallel-first**: feature mapping, deep audit, and FP-check each spawn subagents per group/batch. Verification spawns one fork per finding.
 - **Memory-persistent across compactions**: every phase rewrites a resume note in session memory and a live-instance note in repo memory.
-- **`general-purpose` subagents only** for write-needed work — `Explore` agents are read-only and silently produce no artifacts (a real-audit lesson).
+- **Writable subagents only** for write-needed work — read-only agents (Claude/Copilot `Explore`) silently produce no artifacts; Codex `spawn_agent` is writable by default (a real-audit lesson). See SKILL.md → *Cross-client tool mapping*.
 - **FP-check is static, verify is live** — separated so "I couldn't reproduce" handwaves don't kill real source-level bugs.
 - **Adversarial review in-fork** — after the PoCs, each verify fork re-tests its own findings with fresh, unbiased subagents (the auditor's conclusion is withheld from them), catching bias and intentionally-vulnerable/test code before anything reaches the report.
 - **Patch-bypass mining** — for every prior CVE, fetch the patch diff and check sibling files for the same root cause untouched. Highest-value class in practice.
@@ -257,7 +278,7 @@ The launcher templates in `prompts/` and `claude/commands/` are tracked in git a
 
 ## Requirements
 
-- VS Code with GitHub Copilot Chat, and/or Claude Code CLI
+- VS Code with GitHub Copilot Chat, and/or Claude Code CLI, and/or OpenAI Codex CLI
 - For install: a POSIX shell (`bash`) on macOS / Linux / WSL / Git Bash, **or** PowerShell 5.1+ on Windows (`install.ps1`)
 - Typically `sqlite3` for `audit.db` queries during audits
 

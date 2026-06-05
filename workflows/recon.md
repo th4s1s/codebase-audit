@@ -1,8 +1,8 @@
-# `/codebase-audit:recon` — Source Detection + Reconnaissance + Feature Mapping
+# codebase-audit — recon: Source Detection + Reconnaissance + Feature Mapping
 
 **Purpose**: Detect the audit target, identify feature groups, and produce a complete code-to-feature mapping via parallel subagents. End by writing the resume note.
 
-**Entry**: User invokes `/codebase-audit:recon` or "audit this app" (full pipeline).
+**Entry**: User invokes the **recon** phase (see SKILL.md → *How phases are invoked per client*) or "audit this app" (full pipeline).
 **Exit**: All feature groups mapped, resume note saved, user gate before deploy phase.
 
 ---
@@ -24,12 +24,12 @@ Follow [../references/phase0-source-detection.md](../references/phase0-source-de
 
 1. Probe IDA Pro MCP (`mcp_ida-pro-mcp_list_instances`).
 2. Scan workspace for source-code indicators (build files, common dirs).
-3. Use `vscode_askQuestions` with the appropriate prompt variant.
+3. Ask the user to choose the appropriate prompt variant (see SKILL.md → *Cross-client tool mapping*).
 4. Insert into `cba_sources`.
 
 ## Step 3 — Reconnaissance
 
-Use `grep`/`glob`/`semantic_search` (source) and/or `mcp_ida-pro-mcp_survey_binary` (IDA) in parallel to gather:
+Use your file-search tools — keyword/regex search, glob, and semantic/codebase search where your client provides it (see SKILL.md → *Cross-client tool mapping*) — and/or `mcp_ida-pro-mcp_survey_binary` (IDA) in parallel to gather:
 
 - Language(s) and framework(s)
 - Build/deploy system (Dockerfile, docker-compose, Makefile, install scripts)
@@ -51,15 +51,15 @@ Based on codebase size (see [../references/phase2-feature-mapping.md](../referen
 
 Use the naming convention `G1…Gn` with stable IDs (so subagent outputs and SQL rows align).
 
-Present groups via `vscode_askQuestions`: "I've identified N feature groups. [list]. Should I proceed?" with `["Looks good — proceed", "Let me adjust the groups"]`.
+Present the groups and ask the user to confirm (see SKILL.md → *Cross-client tool mapping*): "I've identified N feature groups. [list]. Should I proceed?" with options `["Looks good — proceed", "Let me adjust the groups"]`.
 
 Insert approved groups into `cba_feature_groups` (status='pending').
 
 ## Step 5 — Parallel feature mapping subagents
 
-**CRITICAL agent-type rule**: use `general-purpose` (NOT `Explore`). Explore is read-only and silently produces no SQL inserts or artifact files. (See [../references/lessons-learned.md](../references/lessons-learned.md) item #1.)
+**CRITICAL — use a writable subagent**: the mapping subagents must run with a **writable** agent (see SKILL.md → *Cross-client tool mapping*) so their SQL inserts and artifact files persist; a read-only agent (e.g. Claude/Copilot `Explore`) silently produces no SQL inserts or artifact files. (See [../references/lessons-learned.md](../references/lessons-learned.md) item #1.)
 
-Spawn ONE subagent per feature group, ALL in parallel (one `runSubagent` call per group in the same response).
+Spawn ONE subagent per feature group, ALL in parallel (one subagent-spawn call per group in the same response — see SKILL.md → *Cross-client tool mapping*).
 
 Each subagent prompt (template from [../references/phase2-feature-mapping.md](../references/phase2-feature-mapping.md)) must include:
 
@@ -93,11 +93,11 @@ Present:
 
 > Reconnaissance + feature mapping complete. N groups mapped with M total security observations. Resume note saved.
 >
-> Next: `/codebase-audit:deploy` to bring up a live instance for later PoC verification, or `/codebase-audit:audit` if you'll skip live testing.
+> Next: the **deploy** phase to bring up a live instance for later PoC verification, or the **audit** phase if you'll skip live testing (see SKILL.md for your client's exact phase syntax).
 >
 > Say **go deploy**, **go audit**, or **adjust** to revise mappings.
 >
-> **Before continuing, run a manual compact** (`/compact` in Claude Code, Compact in Copilot Chat). The resume note + SQL state + per-group mapping artifacts are already on disk, so compacting now is lossless.
+> **Before continuing, run a manual compact** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). The resume note + SQL state + per-group mapping artifacts are already on disk, so compacting now is lossless.
 
 Do NOT auto-advance.
 

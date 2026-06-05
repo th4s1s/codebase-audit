@@ -1,4 +1,4 @@
-# `/codebase-audit:report` — Final Report Generation
+# codebase-audit — report: Final Report Generation
 
 **Purpose**: Stitch FP-check verdicts + verify-fork artifacts into the consolidated `report.md` and a short vendor-facing `disclosure-summary.md`.
 

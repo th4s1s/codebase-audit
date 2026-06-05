@@ -4,18 +4,18 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ---
 
-## 1. `Explore` subagent is read-only — silently produces no artifacts
+## 1. A read-only subagent silently produces no artifacts (Claude/Copilot `Explore`)
 
 **Observed in:** A prior Phase 4 run. Six of seven groups returned no findings to SQL.
 
 **Symptom:** Subagent returns analytical text but never runs `INSERT` statements or creates `artifacts/G<n>-findings.md` files. The orchestrator sees output that looks like findings but the database stays empty.
 
-**Root cause:** `Explore` agent type has no terminal, no file-write, and no SQL tools. It silently does nothing when asked to write to disk.
+**Root cause:** a read-only agent type (Claude/Copilot `Explore`) has no terminal, no file-write, and no SQL tools — it silently does nothing when asked to write to disk. (Codex `spawn_agent` is writable by default, so this trap doesn't arise there — but still confirm a spawned agent can write before relying on it.)
 
 **Prevention:**
-- Use `general-purpose` agent type for any subagent that must write artifacts, run SQL, or hit the live instance.
-- Use `Explore` ONLY for pure read-only research and Q&A.
-- If you encounter this mid-pipeline: re-spawn the failed subagent with `general-purpose`, OR manually materialize the findings from the agent's return blob into `artifacts/G<n>-findings.md` + SQL inserts. Don't lose findings.
+- Use a **writable** subagent for any subagent that must write artifacts, run SQL, or hit the live instance (Claude/Copilot `general-purpose`; Codex `spawn_agent`). See SKILL.md → *Cross-client tool mapping*.
+- Use a **read-only** agent (Claude/Copilot `Explore`; Codex: just don't grant write tools) ONLY for pure read-only research and Q&A.
+- If you encounter this mid-pipeline: re-spawn the failed subagent as a **writable** agent, OR manually materialize the findings from the agent's return blob into `artifacts/G<n>-findings.md` + SQL inserts. Don't lose findings.
 
 ---
 
@@ -68,7 +68,7 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 **Prevention:**
 - Subagent prompts should explicitly say: "Write your output to `<AUDIT_DIR>/artifacts/G<n>-findings.md`, not to session memory."
-- After consolidating, delete intermediate session-memory files: `memory delete /memories/session/g<n>-*.md`.
+- After consolidating, delete intermediate session-memory files (Claude/Copilot: `memory delete /memories/session/g<n>-*.md`; Codex/others: remove the backing files).
 - Resume note should declare which file is canonical for each piece of state.
 
 ---
@@ -123,7 +123,7 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 **Symptom:** Audit produces 47 findings but only 2 are live-verified because the live instance wasn't set up early enough.
 
 **Prevention:**
-- Make `/codebase-audit:deploy` a mandatory step before `/codebase-audit:audit`, not optional.
+- Make the **deploy** phase a mandatory step before the **audit** phase, not optional.
 - Even if the deep audit subagents don't all use the live instance, having it ready means verify forks can do their job later.
 - If the project has no clear deploy path, document that fact in the live-instance note as "infra-blocked, all findings will be source-only" — and the report sets expectations accordingly.
 

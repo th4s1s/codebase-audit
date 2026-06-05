@@ -1,4 +1,4 @@
-# `/codebase-audit:deploy` — Live Instance Setup
+# codebase-audit — deploy: Live Instance Setup
 
 **Purpose**: Make sure a live instance of the audit target is reachable so that later phases (deep audit live-PoC, fpcheck spot-checks, verify forks) have a reproduction target. The instance may be **locally managed** (we bring it up via Docker / make / ad-hoc command) or **externally provided** (already running — e.g. on a staging server, remote VM, customer-hosted environment). Either way, produce a single repo-memory artifact so subagents and forks can find it.
 
@@ -62,7 +62,7 @@ Pick the **highest-fidelity** option that produces a network-reachable instance 
 
 ## Step 2 — Attempt deploy and capture failures
 
-Run the chosen deploy command via `execution_subagent` (so output is filtered and the orchestrator context stays small). Common failure classes:
+Run the chosen deploy command via a command-running subagent (so output is filtered and the orchestrator context stays small — see SKILL.md → *Cross-client tool mapping*). Common failure classes:
 
 - **Missing Dockerfile referenced by compose** → check `.dockerignore` / `.docker/` dirs for the real file name; edit the compose file to point at it.
 - **Schema validation failures on empty env vars** → identify the offending block, remove or fill it.
@@ -122,11 +122,11 @@ Present:
 >
 > Capabilities for verify forks: backup=<y/n>, edit-config=<y/n>, restart=<y/n>, logs=<y/n>.
 >
-> Next: `/codebase-audit:audit` to ingest prior CVEs and run parallel deep audits.
+> Next: the **audit** phase to ingest prior CVEs and run parallel deep audits (see SKILL.md for your client's phase syntax).
 >
 > Say **go audit** to proceed.
 >
-> **Before continuing, run a manual compact** (`/compact` in Claude Code, Compact in Copilot Chat). The live-instance note is in repo memory and the resume note has been refreshed, so compacting now is lossless. The audit phase ingests CVEs + spawns one deep-audit subagent per group and will benefit from a clean context.
+> **Before continuing, run a manual compact** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). The live-instance note is in repo memory and the resume note has been refreshed, so compacting now is lossless. The audit phase ingests CVEs + spawns one deep-audit subagent per group and will benefit from a clean context.
 
 If mode is `external-provided`, explicitly call out in the gate message that any finding requiring config changes, service restart, or filesystem access will be marked INCONCLUSIVE by verify forks unless the operator coordinates the change out-of-band.
 

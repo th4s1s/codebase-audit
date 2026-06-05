@@ -1,4 +1,4 @@
-# `/codebase-audit:fpcheck` — Parallel Static False-Positive Elimination
+# codebase-audit — fpcheck: Parallel Static False-Positive Elimination
 
 **Purpose**: Eliminate false positives via **static review only** — re-read every cited source file, apply 18 Hard Exclusions + 10 Precedent rules + Marginal Gain Test. No live testing in this phase (that's `verify`).
 
@@ -40,14 +40,14 @@ Before launching FP-check, query for finding pairs that cite the same file:line 
 
 ## Step 4 — Spawn parallel FP-check subagents
 
-**Agent type**: `general-purpose` (Explore is read-only and cannot write SQL inserts → ALL verdicts would be lost). Use Claude Opus 4.5+.
+**Agent type**: a **writable** subagent — a read-only agent cannot write the SQL inserts, so ALL verdicts would be lost. Use the strongest model your client offers. See SKILL.md → *Cross-client tool mapping*.
 
 Spawn ONE subagent per batch, ALL in parallel.
 
 Each subagent must:
 
-1. Read `/home/lio/.copilot/skills/fp-check-pivot/SKILL.md` (or equivalent) — full methodology.
-2. Read [../references/phase5-fp-check.md](../references/phase5-fp-check.md) for the canonical 18 Hard Exclusions + 10 Precedent rules.
+1. Read [../references/phase5-fp-check.md](../references/phase5-fp-check.md) — the full false-positive methodology (bundled in this skill; no external skill required).
+2. Use the canonical 18 Hard Exclusions + 10 Precedent rules from that reference's *Canonical FP Rules Summary*.
 3. For EACH finding in the batch:
    - **Re-read every cited source file** at the cited lines (Capability Validity rule CV-3 — never trust the artifact's quoted code without re-verifying).
    - Apply all 18 Hard Exclusions.
@@ -107,7 +107,7 @@ Present:
 >
 > When all forks finish: come back here and say **go report** for Phase 6.
 >
-> **Before opening verify forks, run a manual compact here** (`/compact` in Claude Code, Compact in Copilot Chat). The orchestrator will only need the FP verdicts + resume note to stitch the final report — everything else (per-finding source dives, dedup reasoning) is already on disk. Each verify fork starts in its own clean context anyway, so this compact is purely for the orchestrator.
+> **Before opening verify forks, run a manual compact here** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). The orchestrator will only need the FP verdicts + resume note to stitch the final report — everything else (per-finding source dives, dedup reasoning) is already on disk. Each verify fork starts in its own clean context anyway, so this compact is purely for the orchestrator.
 
 ## Quality Checks
 

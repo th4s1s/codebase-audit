@@ -1,17 +1,17 @@
-# `/codebase-audit:verify` — Per-Finding Live PoC (Runs in a FORK)
+# codebase-audit — verify: Per-Finding Live PoC (Runs in a FORK)
 
 **Purpose**: Reproduce true-positive findings against the deployed live instance, then **adversarially review each one with fresh, unbiased subagents** before returning. **This workflow runs in a forked conversation**, not the main orchestrator. The fork covers a small batch of findings (~5–8), writes one artifact per finding, and re-tests its own conclusions (Step 2) so bias and intentionally-vulnerable/test code are caught before the report.
 
-**Entry**: You are a forked conversation. The user pasted a verify-fork prompt **or** ran `/codebase-audit:verify <comma-separated-ids>` (IDs are mandatory). The audit's main orchestrator is paused awaiting fork completion.
-**Exit**: One `verify-<finding-id>.md` artifact per in-scope finding. Return a summary table to the user (for their situational awareness — the orchestrator does NOT need it pasted back; `/codebase-audit:report` reads the artifacts directly from disk).
+**Entry**: You are a forked conversation. The user pasted a verify-fork prompt **or** invoked the **verify** phase with a comma-separated finding-ID list (IDs are mandatory; see SKILL.md → *How phases are invoked per client* for your client's syntax). The audit's main orchestrator is paused awaiting fork completion.
+**Exit**: One `verify-<finding-id>.md` artifact per in-scope finding. Return a summary table to the user (for their situational awareness — the orchestrator does NOT need it pasted back; the **report** phase reads the artifacts directly from disk).
 
 ---
 
 ## Guard — refuse to run without IDs
 
-If the user invoked `/codebase-audit:verify` with **no finding IDs and no pasted fork prompt**, stop immediately and respond:
+If the user invoked the **verify** phase with **no finding IDs and no pasted fork prompt**, stop immediately and respond:
 
-> `/codebase-audit:verify` runs in a forked conversation and requires a finding-ID list (e.g. `/codebase-audit:verify G1-F1,G1-F2`). To consolidate the artifacts produced by completed forks, run `/codebase-audit:report` in this orchestrator — it will ingest every `verify-<id>.md` from disk and refuse to continue if any TP is missing.
+> The **verify** phase runs in a forked conversation and requires a finding-ID list. Re-invoke it with the IDs using your client's syntax — Claude: `/codebase-audit:verify G1-F1,G1-F2`; Copilot: `/codebase-audit verify G1-F1,G1-F2`; Codex: `$codebase-audit verify G1-F1,G1-F2`. To consolidate the artifacts produced by completed forks, run the **report** phase in this orchestrator — it ingests every `verify-<id>.md` from disk and refuses to continue if any TP is missing.
 
 Do not attempt to guess intent. Do not run any PoC. Do not scan artifacts. Wait for the user to re-issue the correct command.
 
@@ -185,7 +185,7 @@ Do this for every **CONFIRMED** finding (and any **INCONCLUSIVE** one you're tem
 
 ### 2a. Spawn the reviewers
 
-For each finding, spawn **2–3 fresh `general-purpose` subagents in parallel**. Give each a distinct skeptical lens (perspective-diverse beats N identical reviewers):
+For each finding, spawn **2–3 fresh writable subagents in parallel** (see SKILL.md → *Cross-client tool mapping*). Give each a distinct skeptical lens (perspective-diverse beats N identical reviewers):
 
 - **Reviewer 1 — "is the bug real?"** Re-derive the vulnerability from source independently; is the data flow genuine and reachable by the stated attacker, or does a guard / validation / type make it impossible?
 - **Reviewer 2 — "is the PoC valid?"** Does the captured evidence actually demonstrate the claimed impact on the **real, unmodified** target via the **genuine attacker path** — or is it a self-harness, a sanitizer abort, a debugger-injected state, or a missing control run? Does the impact match what's shown (no "infinite" / "RCE" / "always" beyond the evidence)?
@@ -219,7 +219,7 @@ Return: verdict ∈ {UPHELD, DISPUTED, INTENTIONAL-OR-TEST-CODE, OVERSTATED}, co
 
 Record the result in each `verify-<id>.md` under the **Adversarial review** section (reviewer count, each verdict + one-line reason, the consensus, and any change you made). If the review overturns the result, update that artifact's `Status:` and `Severity adjustment:` lines too.
 
-> **Optional (Claude Code only): agent-team escalation.** When you want genuine back-and-forth rather than one-shot verdicts, create a small agent team and let the reviewers debate / hold counter-opinions, reconciling interactively before you record the outcome. **Copilot Chat has no agent teams** — there, use the parallel one-shot subagents above (the default). Either way the reviewers must be fresh and the prompt neutral.
+> **Optional (Claude Code only): agent-team escalation.** When you want genuine back-and-forth rather than one-shot verdicts, create a small agent team and let the reviewers debate / hold counter-opinions, reconciling interactively before you record the outcome. **Copilot Chat and Codex CLI have no agent teams** — there, use the parallel one-shot subagents above (the default). Either way the reviewers must be fresh and the prompt neutral.
 
 ## Step 3 — Do NOT modify `cba_findings` or `cba_fp_verdicts`
 
@@ -254,7 +254,7 @@ Return a compact markdown table to the user (this is for the user's situational 
 | G<n>-F<k> | REFUTED | MED → — | overturned: test-code | reviewers flagged intentionally-vulnerable example |
 | … | … | … | … | … |
 
-Plus a one-paragraph high-level summary. The user can close this fork once the table looks right; the orchestrator will pick the artifacts up on its next `/codebase-audit:verify` (ingest) or `/codebase-audit:report` invocation.
+Plus a one-paragraph high-level summary. The user can close this fork once the table looks right; the orchestrator will pick the artifacts up on its next **verify** (ingest) or **report** invocation.
 
 ## Common Pitfalls (see also [../references/lessons-learned.md](../references/lessons-learned.md))
 

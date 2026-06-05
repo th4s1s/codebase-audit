@@ -1,4 +1,4 @@
-# `/codebase-audit:audit` — Known-Findings Ingest + Parallel Deep Audit
+# codebase-audit — audit: Known-Findings Ingest + Parallel Deep Audit
 
 **Purpose**: Load prior CVEs/GHSAs and **mine them for patch-bypass surface**, then spawn one deep-audit subagent per feature group to hunt for vulnerabilities. End by writing the resume note.
 
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS cba_findings (
 
 ## Step 4 — Parallel deep-audit subagents
 
-**Agent type**: `general-purpose` (NOT Explore — must write artifacts and SQL). Use the latest Claude Opus available.
+**Agent type**: a **writable** subagent (must write artifacts + SQL — not a read-only one). Use the strongest model your client offers. See SKILL.md → *Cross-client tool mapping*.
 
 Spawn ONE subagent per feature group, ALL in parallel.
 
@@ -108,7 +108,7 @@ Each subagent prompt (template from [../references/phase4-deep-audit.md](../refe
 
 If a subagent returns "no response" or returns analysis without writing the SQL/artifact:
 
-1. Check whether agent type was `Explore` by mistake — re-run with `general-purpose`.
+1. Check whether a read-only agent was used by mistake — re-run with a **writable** subagent (Claude/Copilot: `general-purpose`, not `Explore`; Codex `spawn_agent` is always writable, so rule this out).
 2. If the agent ran but its findings only exist in its return blob: materialize them yourself by writing the `artifacts/G<n>-findings.md` file and running the SQL inserts directly. Do NOT lose findings.
 3. Update the resume note's "Quirks to remember" section so future runs avoid the same trap.
 
@@ -140,11 +140,11 @@ Present:
 
 > Deep audit complete. N findings across M groups: X CRITICAL, Y HIGH, Z MEDIUM, W LOW. K already live-verified.
 >
-> Next: `/codebase-audit:fpcheck` for static false-positive elimination.
+> Next: the **fpcheck** phase for static false-positive elimination (see SKILL.md for your client's phase syntax).
 >
 > Say **go fpcheck** to proceed.
 >
-> **Before continuing, run a manual compact** (`/compact` in Claude Code, Compact in Copilot Chat). All findings have been written to `cba_findings` + per-group artifacts, the resume note is fresh — compacting now is lossless. fpcheck spawns more subagents and will benefit from a clean context.
+> **Before continuing, run a manual compact** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). All findings have been written to `cba_findings` + per-group artifacts, the resume note is fresh — compacting now is lossless. fpcheck spawns more subagents and will benefit from a clean context.
 
 ## Quality Checks
 

@@ -44,7 +44,7 @@ If a group exceeds the maximum, split it. If below the minimum, merge with a rel
 
 ## Subagent Prompt Template
 
-Replace `{placeholders}` with actual values. The entire prompt is passed to the Task tool.
+Replace `{placeholders}` with actual values. The entire prompt is passed to the subagent-spawning tool (see SKILL.md → *Cross-client tool mapping*).
 
 ```
 You are a security researcher mapping features to source code for a security audit.
@@ -57,7 +57,7 @@ Key directories to focus on: {key_directories}
 ## Source Access
 {source_access_instructions}
 
-For source code: Use grep, glob, and view tools to read files.
+For source code: Use your file-search and file-read tools (grep/glob to locate files, then read their contents).
 For IDA Pro: Use ida-pro-mcp tools (decompile, analyze_function, entity_query, find_regex, etc.)
 
 ## What to Map
@@ -100,7 +100,7 @@ Follow imports/includes to understand dependencies. Document internal helper fun
 ```
 Source code is at: {source_path}
 Language: {language}
-Use glob to find files, grep to search, view to read content.
+Use glob to find files, grep to search, and your file-read tool to read content.
 ```
 
 **IDA Pro only:**

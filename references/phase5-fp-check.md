@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Verify every finding from Phase 4 using the `fp-check-pivot` methodology. This phase ensures zero false positives reach the final report.
+Verify every finding from Phase 4 using the false-positive-check methodology defined in this reference (bundled in this skill — no external skill required). This phase ensures zero false positives reach the final report.
 
 ## Batching Strategy
 
@@ -24,16 +24,16 @@ batch_count = CEILING(total_findings / 10)
 
 ## Subagent Prompt Template
 
-Each FP-check subagent gets the full `fp-check-pivot` methodology. The prompt structure:
+Each FP-check subagent gets the full false-positive methodology (bundled in this skill — the rules in this reference; no external skill required). The prompt structure:
 
 ```
 You are a False Positive Verifier. Your job is to verify or reject vulnerability findings
 using rigorous code-level analysis. You are adversarial — you WANT to find false positives.
 
 ## Methodology
-Follow the fp-check-pivot skill methodology exactly:
+Follow the false-positive-check methodology (defined in this reference) exactly:
 1. Restate each finding's claim precisely
-2. Apply ALL 18 Hard Exclusions (canonical-fp-rules.md)
+2. Apply ALL 18 Hard Exclusions (see the *Canonical FP Rules Summary* in this reference)
 3. Apply ALL 10 Precedent rules
 4. Apply Capability Validity checks (1-3)
 5. Check confidence threshold (must be ≥ 8)

@@ -84,7 +84,7 @@ Total: <N> observations.
 
 **Fork prompt template (paste into each forked conversation):**
 ```
-You are a forked conversation from <project> audit `audit-<timestamp>`. Workspace: <path>. Read /memories/session/<project>-audit-resume.md (Phase 5.5 section) AND /memories/repo/<project>-live-instance.md first. Your scope: live-verify findings <LIST> as Fork <X>. Follow the workflow in /home/lio/.copilot/skills/codebase-audit/workflows/verify.md. Write one artifact per finding at reports/audit-<ts>/artifacts/verify-<finding-id>.md, then adversarially review each CONFIRMED finding with fresh subagents (verify.md Step 2) and record the outcome in the artifact. Return a summary table when done.
+You are a forked conversation from <project> audit `audit-<timestamp>`. Workspace: <path>. Read /memories/session/<project>-audit-resume.md (Phase 5.5 section) AND /memories/repo/<project>-live-instance.md first. Your scope: live-verify findings <LIST> as Fork <X>. Run this skill's verify phase for that scope (Claude: `/codebase-audit:verify <LIST>`; Codex: `$codebase-audit verify <LIST>`; Copilot: `/codebase-audit verify <LIST>`); if you need the raw steps, read `<SKILL_DIR>/workflows/verify.md` (the orchestrator substitutes <SKILL_DIR> with its own install root — e.g. ~/.claude/skills/codebase-audit, ${CODEX_HOME:-~/.codex}/skills/codebase-audit, or ~/.copilot/skills/codebase-audit). Write one artifact per finding at reports/audit-<ts>/artifacts/verify-<finding-id>.md, then adversarially review each CONFIRMED finding with fresh subagents (verify.md Step 2) and record the outcome in the artifact. Return a summary table when done.
 ```
 
 ## Phase 6 (stitch in this root conversation after all forks finish)
@@ -95,7 +95,7 @@ You are a forked conversation from <project> audit `audit-<timestamp>`. Workspac
 5. Generate `reports/audit-<ts>/disclosure-summary.md` (short, vendor-facing)
 
 ## Quirks / Lessons specific to this audit
-- <e.g., "Explore subagents returned no findings — re-ran with general-purpose">
+- <e.g., "read-only subagents returned no findings — re-ran with a writable agent (Claude/Copilot general-purpose)">
 - <e.g., "User hand-edited .docker_compose/rules.json on <date>">
 - <any non-obvious environment thing future-me would forget>
 

@@ -10,8 +10,9 @@ description: >-
   reference like 'run the recon phase' / 'run the fpcheck phase'. On Claude
   Code CLI also triggers on '/codebase-audit:recon', '/codebase-audit:deploy',
   '/codebase-audit:audit', '/codebase-audit:fpcheck', '/codebase-audit:verify',
-  '/codebase-audit:report' (Copilot Chat does not support namespaced slash
-  commands — pass the phase as an argument to /codebase-audit instead).
+  '/codebase-audit:report' (Copilot Chat and OpenAI Codex CLI do not support
+  namespaced slash commands — pass the phase as an argument, e.g.
+  '/codebase-audit recon', or in Codex '$codebase-audit recon').
   NOT for single-file review (use code-reviewer), quick scans (use semgrep),
   or differential review of a PR (use differential-review).
 ---
@@ -28,9 +29,9 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 3. **Memory-persistent across compactions**: Every major phase ends by **rewriting the audit resume note** (see `references/resume-note-template.md`). This single file lets the orchestrator survive arbitrary context compactions without losing state. SQLite (`audit.db`) holds the structured data; the resume note holds the working strategy.
 
-4. **Manually compact between phases, never mid-phase**: Auto-compaction is unpredictable and frequently drops the exact reasoning/state the next phase needs (subagent outputs, dedup decisions, partial findings not yet flushed to SQL). At every user gate, **before saying "go" to the next phase**, run a manual compact (`/compact` in Claude Code, the Compact action in Copilot Chat). The phase you just finished has already written its artifacts to disk + a fresh resume note, so compacting at that boundary is lossless; compacting mid-phase is not.
+4. **Manually compact between phases, never mid-phase**: Auto-compaction is unpredictable and frequently drops the exact reasoning/state the next phase needs (subagent outputs, dedup decisions, partial findings not yet flushed to SQL). At every user gate, **before saying "go" to the next phase**, run a manual compact (`/compact` in Claude Code or Codex CLI, the Compact action in Copilot Chat). The phase you just finished has already written its artifacts to disk + a fresh resume note, so compacting at that boundary is lossless; compacting mid-phase is not.
 
-5. **Subagent agent type matters**: `Explore` agents are **read-only** — no terminal, no file writes. Use `general-purpose` for any subagent that must write artifacts, run SQL inserts, or hit the live instance. (Lesson learned the hard way — see `references/lessons-learned.md`.)
+5. **Subagent capability matters**: any subagent that must write artifacts, run SQL inserts, or hit the live instance needs a **writable** agent — never a read-only one (which silently produces no files/SQL). See the *Cross-client tool mapping* for each client's writable agent (Claude/Copilot `general-purpose`, NOT read-only `Explore`; Codex `spawn_agent`). (Lesson learned the hard way — see `references/lessons-learned.md`.)
 
 6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** so curl/HTTP noise never bloats the orchestrator context. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report. Each fork also **adversarially reviews** its findings with fresh, unbiased subagents (verify Step 2) before returning, so auditor bias and intentionally-vulnerable/test code are caught early.
 
@@ -54,7 +55,6 @@ The skill supports six phases. User can invoke them individually after the prior
 | `fpcheck` | [workflows/fpcheck.md](workflows/fpcheck.md) | **Parallel FP-check subagents** apply Hard Exclusions / Precedent rules / Marginal Gain Test — **static review only**, no live testing; write resume note | Audit done | `cba_fp_verdicts` populated; per-batch `artifacts/phase5-batch<X>.md`; resume note updated |
 | `verify` | [workflows/verify.md](workflows/verify.md) | **Runs in a forked conversation**, requires finding-ID list. Per-finding live-instance PoC, then **adversarial review by fresh subagents** (Step 2); writes `artifacts/verify-<finding-id>.md`. Refuses to run without IDs. | FP-check produced TPs; user has opened a fork and passed `<ids>` (or pasted the orchestrator's fork prompt). | One verify artifact per finding in scope; CONFIRMED / REFUTED / INCONCLUSIVE, each adversarially reviewed (bias / intentionally-vulnerable-code checks). |
 | `report` | [workflows/report.md](workflows/report.md) | Runs in the orchestrator. **Step 1 ingests every `verify-<id>.md` from disk** and refuses to continue if any TP is missing an artifact (or explicit skip). Then writes consolidated `report.md` + vendor-facing `disclosure-summary.md`. | All verify forks finished (or explicitly skipped); orchestrator-side. | `report.md`, `disclosure-summary.md`, updated `cba_fp_verdicts.final_id`. |
-| `report` | [workflows/report.md](workflows/report.md) | Stitch all verify artifacts + FP verdicts into consolidated `report.md` and `disclosure-summary.md` | All verify forks finished | Final report under `reports/audit-<timestamp>/` |
 
 **Full pipeline mode**: orchestrator runs recon → deploy → audit → fpcheck → user opens forks → report. Each transition is gated.
 
@@ -64,7 +64,24 @@ The skill supports six phases. User can invoke them individually after the prior
 |---|---|---|
 | **GitHub Copilot Chat** (VS Code) | `/codebase-audit` | `/codebase-audit recon` / `deploy` / `audit` / `fpcheck` / `verify <ids>` / `report` — Copilot does NOT support namespaced slash commands, so the phase is passed as a free-text argument after the slash command. |
 | **Claude Code CLI** | `/codebase-audit` | `/codebase-audit:recon`, `/codebase-audit:deploy`, `/codebase-audit:audit`, `/codebase-audit:fpcheck`, `/codebase-audit:verify <ids>`, `/codebase-audit:report` |
-| **Free-text** (either) | "audit this app" | "run the codebase-audit recon phase" |
+| **OpenAI Codex CLI** | `$codebase-audit` | `$codebase-audit recon` / `deploy` / `audit` / `fpcheck` / `verify <ids>` / `report` — like Copilot, Codex has no namespaced slash commands, so the phase is passed as a free-text argument after the skill invocation. |
+| **Free-text** (any) | "audit this app" | "run the codebase-audit recon phase" |
+
+### Cross-client tool mapping
+
+The workflows name **capabilities**, not one client's tool IDs. Use your client's equivalent:
+
+| Capability | Copilot Chat | Claude Code CLI | OpenAI Codex CLI |
+|---|---|---|---|
+| Ask the user to choose | `vscode_askQuestions` | `AskUserQuestion` | present the options in text and wait for the reply |
+| Spawn a subagent | `runSubagent` (or `task`) | `Task` | `spawn_agent` (+ `wait_agent` / `close_agent`) |
+| Run a command in a subagent | `execution_subagent` | a `general-purpose` `Task` | `spawn_agent` |
+| **Writable** subagent (writes files/SQL) vs read-only | `general-purpose` vs read-only `explore` | `general-purpose` vs read-only `Explore` | `spawn_agent` (writable by default — no read-only type) |
+| Read / search files | `view` / `grep` / `glob` | `Read` / `Grep` / `Glob` | your native file tools |
+| Semantic / codebase search | `semantic_search` | agentic search (`Grep`/`Glob` + exploration) | native code search |
+| Manual context compaction | Compact action | `/compact` | `/compact` |
+
+**Two rules hold on every client:** (1) any subagent that writes artifacts, runs SQL inserts, or hits the live instance MUST be a **writable** agent — a read-only agent silently produces nothing; (2) use the **strongest model your client offers** (e.g. the latest Claude Opus on Claude/Copilot; the default high-capability model on Codex).
 
 ## When to Use
 
@@ -138,11 +155,11 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 
 | Phase | Agent type | Model | Count | Task |
 |---|---|---|---|---|
-| recon (mapping) | `general-purpose` (NOT Explore — needs to write SQL/artifacts) | claude opus 4.5+ | 1 per group | Map features → code |
-| audit | `general-purpose` | claude opus 4.5+ | 1 per group | Deep adversarial audit |
-| fpcheck | `general-purpose` | claude opus 4.5+ | 1 per batch of 8-12 findings | Static FP review |
+| recon (mapping) | **writable** subagent (writes SQL/artifacts — see *Cross-client tool mapping*) | strongest available (e.g. Claude Opus 4.5+) | 1 per group | Map features → code |
+| audit | **writable** subagent | strongest available | 1 per group | Deep adversarial audit |
+| fpcheck | **writable** subagent | strongest available | 1 per batch of 8-12 findings | Static FP review |
 | verify | n/a — runs in a forked **root** conversation | — | 1 fork per ~5-8 findings | Live PoC against deployed instance |
-| verify (review) | `general-purpose`, **fresh** (no fork/audit context) | claude opus 4.5+ | 2-3 per CONFIRMED finding | Adversarial review of each finding/PoC — neutral prompt; real-bug / valid-PoC / intentionally-vulnerable-code lenses (Claude-only: optional agent-team for interactive debate) |
+| verify (review) | **writable** subagent, **fresh** (no fork/audit context) | strongest available | 2-3 per CONFIRMED finding | Adversarial review of each finding/PoC — neutral prompt; real-bug / valid-PoC / intentionally-vulnerable-code lenses (optional interactive multi-agent debate where the client supports it, e.g. a Claude agent-team) |
 
 ## Rationalizations to Reject
 
@@ -153,7 +170,7 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 | "This group is just config, skip it" | Config bugs (SSRF, injection, supply chain) are often the most critical findings. |
 | "Admin-only feature isn't interesting" | Apply Marginal Gain Test — admin → cross-tenant, supply chain, persistence are all valid. |
 | "Static analysis is enough, skip live verify" | Live PoC is mandatory for vendor credibility. Use a fork. |
-| "Use Explore agent for the subagents" | Use **general-purpose** — Explore is read-only and cannot write SQL/artifacts. |
+| "Use a read-only / Explore agent for the subagents" | Use a **writable** subagent (Claude/Copilot `general-purpose`, NOT read-only `Explore`; Codex `spawn_agent`) — a read-only agent cannot write SQL/artifacts. |
 | "Verify in the main conversation to save tokens" | Forks isolate failure and noise. Always fork for verification. |
 | "Skip the resume note this phase, it's fine" | Compaction is unpredictable. Always rewrite the resume note at phase end. |
 | "Context is still big enough, don't bother compacting yet" | Manual compact at every gate. Letting auto-compaction fire mid-phase frequently drops the exact state the next phase needs. The cost of compacting too early is zero; the cost of compacting too late is a corrupted audit. |
@@ -166,7 +183,7 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 
 See [references/lessons-learned.md](references/lessons-learned.md) for the full list. Key items:
 
-1. **Never use `Explore` agent for write-needed work** — silently produces no artifacts.
+1. **Never use a read-only agent for write-needed work** (Claude/Copilot `Explore`) — it silently produces no artifacts; use a writable subagent.
 2. **Always back up live-instance config before PoC** (e.g., `cp .docker_compose/rules.json /tmp/rules.json.bak.fork-<X>`) and verify restore at end.
 3. **User may hand-edit live-instance config between phases** — always re-read configs before edits.
 4. **Patch-bypass class is gold** — when ingesting CVEs, look at the patch diff and check sibling files for the same root cause untouched. (Highest-severity findings in real audits come from this.)
@@ -184,7 +201,7 @@ See [references/lessons-learned.md](references/lessons-learned.md) for the full 
 To begin, route to the appropriate workflow:
 
 - "audit this app" or no specific sub-command → start with [workflows/recon.md](workflows/recon.md)
-- `/codebase-audit:<phase>` → load `workflows/<phase>.md` and execute
+- A specific-phase invocation (per *How phases are invoked per client* — Claude `/codebase-audit:<phase>`, Copilot `/codebase-audit <phase>`, Codex `$codebase-audit <phase>`) → load `workflows/<phase>.md` and execute
 
 ## Phase Reference Index (technical details for sub-workflows)
 
