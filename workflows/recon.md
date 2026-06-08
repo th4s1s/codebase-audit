@@ -16,7 +16,7 @@ mkdir -p "${AUDIT_DIR}/files" "${AUDIT_DIR}/artifacts"
 sqlite3 "${AUDIT_DIR}/audit.db" "SELECT 1;"  # create empty DB
 ```
 
-Record `AUDIT_DIR` — every later step uses it.
+Record `AUDIT_DIR` — every later step uses it. **Stay at the project root for the whole audit: reference `${AUDIT_DIR}` by path, never `cd` into it.** Verify forks inherit the orchestrator's current directory and Claude's resume picker groups sessions by it, so a drifted cwd hides your forks and breaks the resume note's relative commands (see SKILL.md Essential Principle #10 and lessons-learned #17).
 
 ## Step 2 — Phase 0 source detection
 

@@ -19,7 +19,7 @@ Do not attempt to guess intent. Do not run any PoC. Do not scan artifacts. Wait 
 
 ## Step 0 — Orient yourself
 
-You are a fork. Do these reads first (parallel):
+You are a fork. **Work from the project root** (the workspace path in the resume note / fork prompt) — all artifact paths below are relative to it; never operate from inside `reports/`. Then do these reads first (parallel):
 
 1. `/memories/session/<project>-audit-resume.md` — current pipeline state, what's TP, fork inventory, live-instance pointer
 2. `/memories/repo/<project>-live-instance.md` — **deployment mode, capabilities, base URLs, liveness command**, bind-mounted config, hand-edit log, **credentials inventory, tenant/scope boundaries, off-limits resources, rate-limit caps, seed test data** (external-provided)

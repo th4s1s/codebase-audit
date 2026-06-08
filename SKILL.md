@@ -43,6 +43,8 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 9. **Honest impact over inflated severity; PoC on the real build**: A finding is a vulnerability only when impact is demonstrated on the **real, unmodified** target via the **genuine attacker path with attacker-controlled inputs** — not a self-written harness, a sanitizer abort, or a debugger-injected condition (those prove a *defect*, not impact). Apply the attacker-advantage test first; if the stock-build outcome is unobservable or self-healing, it is Informational. Lead with the honest verdict and never defend an overstated severity under pushback. (See `references/lessons-learned.md` items 11–16.)
 
+10. **Stay at the project root — never `cd` into the audit dir**: Keep the orchestrator's working directory at the **project root** for the entire audit. Reference the audit dir (`reports/audit-<ts>/`) and `audit.db` by their path — never `cd` into them. Two reasons: the resume note's resumption commands are relative to the project root, and — critically — **verify forks/branches inherit the orchestrator's current working directory**. Claude's resume picker groups sessions by that directory, so if the cwd has drifted into `reports/audit-<ts>/`, the forks are filed under a *different* project and disappear from the picker (resumable by id, but hard to find), and their relative artifact writes mis-resolve. **Open every fork from the project root.** (See `references/lessons-learned.md` item 17.)
+
 ## Sub-Command Router
 
 The skill supports six phases (invoke them individually after the prior phase completes, or run the full pipeline), plus an automated **`source`** run that chains recon → audit → fpcheck → report unattended for source-only scans.

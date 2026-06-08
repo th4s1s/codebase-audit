@@ -218,6 +218,22 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ---
 
+## 17. Keep the orchestrator at the project root — a drifted cwd hides your verify forks
+
+**Observed in:** A real audit (Windows). Afterward the Claude resume picker showed only the root session under the project; the four verify forks were missing. The root session's recorded cwd was the project root, but each fork's cwd was `…\reports\audit-<timestamp>\`.
+
+**Symptom:** Verify forks/branches don't appear under the project in the resume picker (though `claude --resume <id>` still works). Forks may also write artifacts to a wrong nested path (`reports/audit-<ts>/reports/audit-<ts>/…`) because the fork-prompt artifact paths are relative to the project root.
+
+**Root cause:** During the run the orchestrator's working directory drifted into `reports/audit-<timestamp>/` (e.g. a convenience `cd` to shorten `sqlite3`/artifact commands). A session's project folder under `~/.claude/projects/` is keyed to its **working directory at the moment the session/fork is created** and locked thereafter; the resume picker reads only the one folder matching your launch directory (no cross-folder search). So forks created while the cwd sat in the subdir are filed under a *different* project key than the root session and never show up in the root project's picker — and a post-fork `cd` can't move them, because the key is already locked. (`claude --resume <id>` still finds them by id, bypassing the folder match.)
+
+**Prevention:**
+- **Never `cd` into the audit dir (or any subdir).** Keep the orchestrator at the **project root** for the entire audit; reference `reports/audit-<ts>/` and `audit.db` by path (relative-to-root or absolute).
+- **Open every verify fork from the project root.** If the cwd has drifted, `cd` back to the project root *before* forking — a post-fork `cd` does not move the fork back into the project's picker group.
+- The verify-fork prompt and `verify.md` Step 0 both tell each fork to **operate from the project root** (its artifact paths are relative to it); prefer the **absolute** audit-dir path in fork instructions when in doubt.
+- Recovery for already-orphaned forks: their `.jsonl` files live under `~/.claude/projects/<encoded-subdir-cwd>/` — resume by id with `claude --resume <id>`.
+
+---
+
 ## How to add a new lesson
 
 When you encounter a new failure mode:

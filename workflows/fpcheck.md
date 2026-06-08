@@ -105,7 +105,9 @@ Present:
 
 > FP-check complete. N verdicts: X TP / Y FP / Z DUP. K TPs already have live PoC; M still need live verification.
 >
-> Next: open M-ish forked conversations using the fork prompt in the resume note. Each fork covers ~5-8 findings and writes `artifacts/verify-<id>.md` per finding.
+> Next: open M-ish forked conversations **from the project root** using the fork prompt in the resume note. Each fork covers ~5-8 findings and writes `artifacts/verify-<id>.md` per finding.
+>
+> **Before forking, confirm your working directory is the project root** — `/branch` and forks inherit the current cwd, and Claude's resume picker groups sessions by it. If the cwd has drifted into `reports/audit-<ts>/`, `cd` back to the project root first, or the forks won't show under this project in the resume picker (lessons-learned #17).
 >
 > When all forks finish: come back here and say **go report** for Phase 6.
 >
