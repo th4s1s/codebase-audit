@@ -9,8 +9,7 @@ Design: each client gets its OWN self-contained copy of the skill.
   - Claude install root:  $HOME\.claude\skills\codebase-audit\
       launchers:          $HOME\.claude\commands\codebase-audit.md
                           $HOME\.claude\commands\codebase-audit\*.md
-  - Codex install root:   $env:CODEX_HOME\skills\codebase-audit\
-                          (defaults to $HOME\.codex when CODEX_HOME is unset)
+  - Codex install root:   $HOME\.agents\skills\codebase-audit\
 
 Copilot and Codex auto-discover the skill from their skills dir — no launcher
 files. Claude launchers contain the literal string __SKILL_DIR__; this script
@@ -56,10 +55,8 @@ $Targets = @($Targets | Select-Object -Unique)
 $CopilotSkillDir   = Join-Path $HOME ".copilot\skills\$SkillName"
 $ClaudeSkillDir    = Join-Path $HOME ".claude\skills\$SkillName"
 $ClaudeCommandsDir = Join-Path $HOME ".claude\commands"
-# Codex honors $env:CODEX_HOME (defaults to ~/.codex) and auto-discovers skills
-# under its skills\ dir. (.system\ is reserved for Codex's bundled skills.)
-$CodexHome         = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
-$CodexSkillDir     = Join-Path $CodexHome "skills\$SkillName"
+# Codex discovers user-authored skills from ~/.agents/skills.
+$CodexSkillDir     = Join-Path $HOME ".agents\skills\$SkillName"
 
 function Get-CopilotPromptsDir {
     $codeDir = if ($Insiders) { 'Code - Insiders' } else { 'Code' }

@@ -127,7 +127,7 @@ cd codebase-audit
 .\install.ps1 -Uninstall      # remove selected clients' launchers AND skill dirs
 ```
 
-If PowerShell blocks the script, allow it for the session: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`. (`install.sh` also works on Windows under Git Bash / WSL.) On Windows the install roots are the same names under your profile — `%USERPROFILE%\.claude\...`, `%USERPROFILE%\.copilot\...`, and `%USERPROFILE%\.codex\...` (or `%CODEX_HOME%\skills\...` if set) — and the Claude launchers receive a forward-slash `__SKILL_DIR__` path, which Claude Code accepts.
+If PowerShell blocks the script, allow it for the session: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`. (`install.sh` also works on Windows under Git Bash / WSL.) On Windows the install roots are the same names under your profile — `%USERPROFILE%\.claude\...`, `%USERPROFILE%\.copilot\...`, and `%USERPROFILE%\.agents\skills\...` for Codex — and the Claude launchers receive a forward-slash `__SKILL_DIR__` path, which Claude Code accepts.
 
 ### Where things go
 
@@ -137,7 +137,7 @@ Each client gets its **own self-contained copy** of the skill — installing one
 |---|---|---|
 | **Copilot Chat** | `~/.copilot/skills/codebase-audit/` | _none_ — `SKILL.md` is auto-registered as `/codebase-audit` |
 | **Claude Code CLI** | `~/.claude/skills/codebase-audit/` *(Claude auto-discovers via description triggers)* | `~/.claude/commands/codebase-audit.md` and `~/.claude/commands/codebase-audit/*.md` |
-| **Codex CLI** | `~/.codex/skills/codebase-audit/` (or `$CODEX_HOME/skills/...`) *(Codex auto-discovers via description triggers)* | _none_ — invoked as `$codebase-audit` (like Copilot, no launcher) |
+| **Codex CLI** | `~/.agents/skills/codebase-audit/` *(Codex auto-discovers via description triggers)* | _none_ — invoked as `$codebase-audit` (like Copilot, no launcher) |
 
 ### How the Claude launchers find the skill
 
@@ -195,7 +195,7 @@ All sub-commands accept `$ARGUMENTS` for optional notes (`/codebase-audit:audit 
 
 ### Codex CLI
 
-Codex auto-discovers the skill from `~/.codex/skills/codebase-audit/` (or `$CODEX_HOME/skills/...`). Like Copilot Chat, Codex does **not** expose namespaced per-phase slash commands — there is **one** invocation and you specify the phase as an argument.
+Codex auto-discovers the skill from `~/.agents/skills/codebase-audit/`. Like Copilot Chat, Codex does **not** expose namespaced per-phase slash commands — there is **one** invocation and you specify the phase as an argument.
 
 After installing, **restart Codex** (or run `/skills`) to pick up the new skill, then invoke it explicitly:
 
@@ -243,7 +243,7 @@ codex exec '$codebase-audit source'       # OpenAI Codex CLI, non-interactive
 |---|---|---|---|
 | Invocation surface | One: `/codebase-audit` (phase as argument) | Eight: `/codebase-audit[:phase]` (incl. `:source`) | One: `$codebase-audit` (phase as argument) |
 | Sub-command autocomplete | ❌ not supported | ✅ via `commands/<name>/<sub>.md` | ❌ not supported |
-| Skill auto-load by description | ✅ via user-level skills index | ✅ via `~/.claude/skills/<name>/SKILL.md` | ✅ via `~/.codex/skills/<name>/SKILL.md` |
+| Skill auto-load by description | ✅ via user-level skills index | ✅ via `~/.claude/skills/<name>/SKILL.md` | ✅ via `~/.agents/skills/<name>/SKILL.md` |
 | Argument passing | `${input:phase:...}` prompt or inline | `$ARGUMENTS` substitution | free-text after `$codebase-audit` |
 | Reload required after install | ✅ Developer: Reload Window | ❌ picked up automatically | ✅ restart Codex (or `/skills`) |
 | File-reference syntax | `[label](path)` markdown links | `@absolute/path` | `@path` / markdown links |
@@ -293,7 +293,7 @@ After `./install.sh` (all targets), the *installed* state looks like:
 ~/.claude/skills/codebase-audit/         # Claude skill copy (independent)
 ~/.claude/commands/codebase-audit.md
 ~/.claude/commands/codebase-audit/{recon,deploy,audit,fpcheck,verify,report,source}.md
-~/.codex/skills/codebase-audit/          # Codex skill copy (independent)
+~/.agents/skills/codebase-audit/         # Codex skill copy (independent)
 ```
 
 ## Customizing the launchers
@@ -302,7 +302,7 @@ The launcher templates in `claude/commands/` are tracked in git and free to edit
 
 ## Key design choices
 
-- **Per-client self-contained installs**: Copilot stuff under `~/.copilot/`, Claude stuff under `~/.claude/`, Codex stuff under `~/.codex/` (or `$CODEX_HOME/`). Any one can be installed alone; none needs the others' tooling on the machine.
+- **Per-client self-contained installs**: Copilot stuff under `~/.copilot/`, Claude stuff under `~/.claude/`, Codex stuff under `~/.agents/skills/`. Any one can be installed alone; none needs the others' tooling on the machine.
 - **Parallel-first**: feature mapping, deep audit, and FP-check each spawn subagents per group/batch. Verification spawns one fork per finding.
 - **Memory-persistent across compactions**: every phase rewrites a resume note in session memory and a live-instance note in repo memory.
 - **Writable subagents only** for write-needed work — read-only agents (Claude/Copilot `Explore`) silently produce no artifacts; Codex `spawn_agent` is writable by default (a real-audit lesson). See SKILL.md → *Cross-client tool mapping*.

@@ -3,20 +3,15 @@ name: codebase-audit
 description: >-
   Runs a structured multi-phase security audit of an application using parallel
   subagents for recon, live-instance deployment, deep vulnerability hunting,
-  false-positive verification, and per-finding live PoC verification. Supports
-  source code, IDA Pro MCP (binary reverse engineering), or both. Triggers on
-  'audit this app', 'security audit this codebase', 'find vulnerabilities in
-  this project', 'run the codebase audit', '/codebase-audit', or any phase
-  reference like 'run the recon phase' / 'run the fpcheck phase', or
-  'automated source-only audit' / 'scan the source before release' (the
-  unattended source-only run). On Claude
-  Code CLI also triggers on '/codebase-audit:recon', '/codebase-audit:deploy',
-  '/codebase-audit:audit', '/codebase-audit:fpcheck', '/codebase-audit:verify',
-  '/codebase-audit:report', '/codebase-audit:source' (Copilot Chat and OpenAI Codex CLI do not support
-  namespaced slash commands — pass the phase as an argument, e.g.
-  '/codebase-audit recon', or in Codex '$codebase-audit recon').
-  NOT for single-file review (use code-reviewer), quick scans (use semgrep),
-  or differential review of a PR (use differential-review).
+  false-positive verification, live PoC verification, and final reporting.
+  Supports source code, IDA Pro MCP binary reverse engineering, or both. Use for
+  full app/repo audits, bug bounty audits, patch-bypass research, and automated
+  source-only scans. Triggers on 'audit this app', 'security audit this
+  codebase', 'find vulnerabilities in this project', 'run the codebase audit',
+  '$codebase-audit', '/codebase-audit', phase requests like recon/deploy/audit/
+  fpcheck/verify/report/source, and 'automated source-only audit'. NOT for
+  single-file review, quick pattern scans, PR diff review, threat modeling only,
+  or post-audit cleanup.
 ---
 
 # Codebase Audit — Parallel Feature-Mapped Vulnerability Hunting

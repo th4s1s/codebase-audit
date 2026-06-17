@@ -7,7 +7,7 @@
 #   - Claude install root:  ~/.claude/skills/codebase-audit/
 #       launchers:          ~/.claude/commands/codebase-audit.md
 #                           ~/.claude/commands/codebase-audit/*.md
-#   - Codex install root:   ${CODEX_HOME:-~/.codex}/skills/codebase-audit/
+#   - Codex install root:   ~/.agents/skills/codebase-audit/
 #
 # Copilot and Codex auto-discover the skill from their skills dir — no launcher
 # files. Claude launchers contain the literal string __SKILL_DIR__; install.sh
@@ -51,9 +51,8 @@ fi
 COPILOT_SKILL_DIR="${HOME}/.copilot/skills/${SKILL_NAME}"
 CLAUDE_SKILL_DIR="${HOME}/.claude/skills/${SKILL_NAME}"
 CLAUDE_COMMANDS_DIR="${HOME}/.claude/commands"
-# Codex honors $CODEX_HOME (defaults to ~/.codex) and auto-discovers skills under
-# its skills/ dir. (.system/ is reserved for Codex's bundled skills — never used.)
-CODEX_SKILL_DIR="${CODEX_HOME:-${HOME}/.codex}/skills/${SKILL_NAME}"
+# Codex discovers user-authored skills from ~/.agents/skills.
+CODEX_SKILL_DIR="${HOME}/.agents/skills/${SKILL_NAME}"
 
 detect_copilot_prompts_dir() {
   local code_dir
@@ -228,5 +227,5 @@ if [[ " ${TARGETS[*]} " == *" codex "* ]]; then
   echo "Codex CLI: restart Codex (or run '/skills'), then invoke with '\$${SKILL_NAME}'."
   echo "  For a specific phase, pass it as an argument: '\$${SKILL_NAME} recon' (or deploy /"
   echo "  audit / fpcheck / verify <ids> / report). Codex also auto-loads the skill from"
-  echo "  ${CODEX_HOME:-~/.codex}/skills/${SKILL_NAME}/ based on description triggers."
+  echo "  ${CODEX_SKILL_DIR}/ based on description triggers."
 fi
