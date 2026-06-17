@@ -7,7 +7,9 @@ Run the **full codebase-audit pipeline** on the current workspace.
 
 Optional user note: $ARGUMENTS
 
-Read @__SKILL_DIR__/SKILL.md, then execute the phases in order, gating on user approval between each:
+Read @__SKILL_DIR__/SKILL.md.
+
+**If the Workflow tool is available to you (ultracode):** you may run the full pipeline **gateless, end-to-end, as one deterministic workflow** — see @__SKILL_DIR__/references/workflow-orchestration.md (the full-pipeline skeleton). Otherwise, execute the phases in order, gating on user approval between each:
 
 1. @__SKILL_DIR__/workflows/recon.md — source detection, feature mapping, resume note
 2. @__SKILL_DIR__/workflows/deploy.md — deploy live instance, write live-instance note

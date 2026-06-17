@@ -22,7 +22,7 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 1. **Source-agnostic**: Works with source directories, IDA Pro MCP, or both. Detection happens automatically in recon; user confirms.
 
-2. **Parallel-first**: Feature mapping, deep audit, and FP-check each spawn subagents per group/batch. Per-finding verification spawns one fork per finding. Never serialize when work is independent.
+2. **Parallel-first, except verify**: Feature mapping, deep audit, and FP-check each spawn subagents per group/batch (independent work — parallelize it). **Per-finding verification is the exception: one fork/agent per finding, run *serially* (one at a time)** — they share a single live instance, so parallel PoCs race on config backup/restart.
 
 3. **Memory-persistent across compactions**: Every major phase ends by **rewriting the audit resume note** (see `references/resume-note-template.md`). This single file lets the orchestrator survive arbitrary context compactions without losing state. SQLite (`audit.db`) holds the structured data; the resume note holds the working strategy.
 
@@ -30,7 +30,7 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 5. **Subagent capability matters**: any subagent that must write artifacts, run SQL inserts, or hit the live instance needs a **writable** agent — never a read-only one (which silently produces no files/SQL). See the *Cross-client tool mapping* for each client's writable agent (Claude/Copilot `general-purpose`, NOT read-only `Explore`; Codex `spawn_agent`). (Lesson learned the hard way — see `references/lessons-learned.md`.)
 
-6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** so curl/HTTP noise never bloats the orchestrator context. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report. Each fork also **adversarially reviews** its findings with fresh, unbiased subagents (verify Step 2) before returning, so auditor bias and intentionally-vulnerable/test code are caught early.
+6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** (one fork/agent **per finding**), run **one at a time** so parallel PoCs don't race on the shared live instance. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report. Each fork also **adversarially reviews** its finding with fresh, read-only subagents (verify Step 2) before returning, so auditor bias and intentionally-vulnerable/test code are caught early. On Claude Code with the Workflow tool (ultracode), this runs as a serial loop of fresh agents — see [references/workflow-orchestration.md](references/workflow-orchestration.md).
 
 7. **User gates control pacing**: User explicitly approves transitions between phases. Never auto-advance past a gate.
 
@@ -86,6 +86,10 @@ The workflows name **capabilities**, not one client's tool IDs. Use your client'
 | Manual context compaction | Compact action | `/compact` | `/compact` |
 
 **Two rules hold on every client:** (1) any subagent that writes artifacts, runs SQL inserts, or hits the live instance MUST be a **writable** agent — a read-only agent silently produces nothing; (2) use the **strongest model your client offers** (e.g. the latest Claude Opus on Claude/Copilot; the default high-capability model on Codex).
+
+### Workflow-accelerated mode (Claude Code + ultracode)
+
+On Claude Code, when the **Workflow tool is available to you** (ultracode is on), you may drive a whole run as one deterministic workflow instead of executing phases by hand — and under ultracode **both** the full `/codebase-audit` pipeline and `source` run **gateless, end-to-end**. See **[references/workflow-orchestration.md](references/workflow-orchestration.md)** for the rules + script skeletons. Three things that are easy to get wrong: the **script** must do the fan-out (subagents can't spawn subagents); each `agent()` **executes the phase `.md`** for its unit (it can't run a `/codebase-audit:<phase>` slash command); and **verify runs strictly serially** (one finding at a time — shared live instance). Without the Workflow tool (Copilot, Codex, or Claude without ultracode), ignore this and run inline as usual: full pipeline **human-gated**, `source` **unattended**.
 
 ## When to Use
 
@@ -164,7 +168,7 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 | recon (mapping) | **writable** subagent (writes SQL/artifacts — see *Cross-client tool mapping*) | strongest available (e.g. Claude Opus 4.5+) | 1 per group | Map features → code |
 | audit | **writable** subagent | strongest available | 1 per group | Deep adversarial audit |
 | fpcheck | **writable** subagent | strongest available | 1 per batch of 8-12 findings | Static FP review |
-| verify | n/a — runs in a forked **root** conversation | — | 1 fork per ~5-8 findings | Live PoC against deployed instance |
+| verify | n/a — forked **root** conversation (or a fresh workflow agent) | — | 1 fork/agent **per finding**, **serial** | Live PoC against deployed instance |
 | verify (review) | **writable** subagent, **fresh** (no fork/audit context) | strongest available | 2-3 per CONFIRMED finding | Adversarial review of each finding/PoC — neutral prompt; real-bug / valid-PoC / intentionally-vulnerable-code lenses (optional interactive multi-agent debate where the client supports it, e.g. a Claude agent-team) |
 
 ## Rationalizations to Reject
@@ -222,6 +226,7 @@ To begin, route to the appropriate workflow:
 | [references/resume-note-template.md](references/resume-note-template.md) | Standard resume-note format for compact survival |
 | [references/live-instance-template.md](references/live-instance-template.md) | Standard live-instance doc format |
 | [references/lessons-learned.md](references/lessons-learned.md) | Pitfalls observed in real audits |
+| [references/workflow-orchestration.md](references/workflow-orchestration.md) | Claude-only: drive the pipeline / `source` as a Workflow-tool workflow (ultracode) — rules + script skeletons |
 
 ## Success Criteria
 

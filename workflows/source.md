@@ -5,6 +5,8 @@
 **Entry**: User invokes the **source** run (see SKILL.md → *How phases are invoked per client*) or asks for an "automated source-only audit". A source tree must be present.
 **Exit**: A consolidated report under `reports/audit-<timestamp>/` (`report.md`, `disclosure-summary.md`, `audit.db`) plus a printed counts-by-severity summary. No user gates, no live verification.
 
+> **Workflow-accelerated (Claude Code + ultracode):** if the **Workflow tool is available to you**, drive this run as a deterministic workflow instead of by hand — see [../references/workflow-orchestration.md](../references/workflow-orchestration.md) (the `source` skeleton). Same source-only, gateless behavior; the script just fans out the within-phase work. Without the Workflow tool, follow the steps below inline.
+
 ---
 
 ## Automated source-only mode — precedence rules (READ FIRST)

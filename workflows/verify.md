@@ -1,6 +1,6 @@
 # codebase-audit — verify: Per-Finding Live PoC (Runs in a FORK)
 
-**Purpose**: Reproduce true-positive findings against the deployed live instance, then **adversarially review each one with fresh, unbiased subagents** before returning. **This workflow runs in a forked conversation**, not the main orchestrator. The fork covers a small batch of findings (~5–8), writes one artifact per finding, and re-tests its own conclusions (Step 2) so bias and intentionally-vulnerable/test code are caught before the report.
+**Purpose**: Reproduce true-positive findings against the deployed live instance, then **adversarially review each one with fresh, unbiased subagents** before returning. **This workflow runs in a forked conversation** (or, under the Workflow-accelerated path, a fresh subagent), not the main orchestrator. **One fork/agent verifies exactly one finding** — write its artifact, then re-test it (Step 2) so bias and intentionally-vulnerable/test code are caught before the report.
 
 **Entry**: You are a forked conversation. The user pasted a verify-fork prompt **or** invoked the **verify** phase with a comma-separated finding-ID list (IDs are mandatory; see SKILL.md → *How phases are invoked per client* for your client's syntax). The audit's main orchestrator is paused awaiting fork completion.
 **Exit**: One `verify-<finding-id>.md` artifact per in-scope finding. Return a summary table to the user (for their situational awareness — the orchestrator does NOT need it pasted back; the **report** phase reads the artifacts directly from disk).
@@ -19,7 +19,11 @@ Do not attempt to guess intent. Do not run any PoC. Do not scan artifacts. Wait 
 
 ## Step 0 — Orient yourself
 
-You are a fork. **Work from the project root** (the workspace path in the resume note / fork prompt) — all artifact paths below are relative to it; never operate from inside `reports/`. Then do these reads first (parallel):
+You are a fork. **Work from the project root** (the workspace path in the resume note / fork prompt) — all artifact paths below are relative to it; never operate from inside `reports/`.
+
+**Scope — one finding per fork, serial:** a fork verifies **exactly one finding**. If you were handed several IDs, verify them **strictly one at a time** (finish one finding's PoC + review + artifact before starting the next) — never concurrently — because they share a single live instance and parallel PoCs race on config backup/restart. (Under the Workflow-accelerated path this is enforced by a serial `for`-loop — see [../references/workflow-orchestration.md](../references/workflow-orchestration.md).)
+
+Then do these reads first (parallel):
 
 1. `/memories/session/<project>-audit-resume.md` — current pipeline state, what's TP, fork inventory, live-instance pointer
 2. `/memories/repo/<project>-live-instance.md` — **deployment mode, capabilities, base URLs, liveness command**, bind-mounted config, hand-edit log, **credentials inventory, tenant/scope boundaries, off-limits resources, rate-limit caps, seed test data** (external-provided)
@@ -185,7 +189,7 @@ Do this for every **CONFIRMED** finding (and any **INCONCLUSIVE** one you're tem
 
 ### 2a. Spawn the reviewers
 
-For each finding, spawn **2–3 fresh writable subagents in parallel** (see SKILL.md → *Cross-client tool mapping*). Give each a distinct skeptical lens (perspective-diverse beats N identical reviewers):
+For the finding, spawn **2–3 fresh subagents in parallel** (see SKILL.md → *Cross-client tool mapping*). These reviewers are **read-only** — they re-derive from source + the captured evidence and **must not touch the live instance** — so running them in parallel is safe (only one finding is ever live against the instance at a time). Give each a distinct skeptical lens (perspective-diverse beats N identical reviewers):
 
 - **Reviewer 1 — "is the bug real?"** Re-derive the vulnerability from source independently; is the data flow genuine and reachable by the stated attacker, or does a guard / validation / type make it impossible?
 - **Reviewer 2 — "is the PoC valid?"** Does the captured evidence actually demonstrate the claimed impact on the **real, unmodified** target via the **genuine attacker path** — or is it a self-harness, a sanitizer abort, a debugger-injected state, or a missing control run? Does the impact match what's shown (no "infinite" / "RCE" / "always" beyond the evidence)?

@@ -37,7 +37,7 @@ This step is the canonical "orchestrator reads what the forks produced" — ther
    - Open another fork for the missing IDs (recommended), OR
    - Explicitly skip (the finding will be tagged `(source-only — not live-verified)` in the report).
 
-   Provide a copy-pasteable fork prompt batching the missing IDs (~5–8 per fork) so the user can immediately open the next fork. Do **not** proceed to Step 2 until every TP has an artifact or an explicit skip decision.
+   Provide a copy-pasteable fork prompt for the missing IDs (**one finding per fork**, run one at a time) so the user can immediately open the next fork. Do **not** proceed to Step 2 until every TP has an artifact or an explicit skip decision.
 
 7. Refresh `/memories/session/<project>-audit-resume.md` with a "Verify status snapshot" section: CONFIRMED / REFUTED / INCONCLUSIVE / MISSING counts. Mark verify DONE only if MISSING is empty (or every MISSING is user-skipped).
 

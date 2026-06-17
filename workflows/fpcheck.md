@@ -94,7 +94,7 @@ Rewrite the resume note with:
 - Phase status: recon/deploy/audit/fpcheck DONE; **verify IN PROGRESS via FORKED conversations**
 - Final verdict tally (TP / FP / DUP counts)
 - **List which findings already have live-PoC** (from `cba_findings.verified='live-poc'` carried over from audit phase, plus any new live-PoC captured by FP-check artifacts) — these do NOT need a verify fork *(Automated `source` mode: there is no live-PoC and no verify fork — record all TPs as source-only and skip the fork inventory / fork prompt; see [source.md](source.md))*
-- **Fork inventory table** for the remaining source-only TPs: which findings each fork should cover (~5-8 per fork; group by feature affinity)
+- **Fork inventory** for the remaining TPs needing live verification: **one fork per finding** (each verify fork/agent covers exactly one finding)
 - The **fork prompt template** ready to paste (see [verify.md](verify.md))
 
 ## Step 8 — USER GATE
@@ -105,7 +105,7 @@ Present:
 
 > FP-check complete. N verdicts: X TP / Y FP / Z DUP. K TPs already have live PoC; M still need live verification.
 >
-> Next: open M-ish forked conversations **from the project root** using the fork prompt in the resume note. Each fork covers ~5-8 findings and writes `artifacts/verify-<id>.md` per finding.
+> Next: open one forked conversation **per finding** that needs live verification, **from the project root**, and run them **one at a time** (serial — they share the live instance), using the fork prompt in the resume note. Each fork verifies a single finding and writes `artifacts/verify-<id>.md`. (Claude Code + ultracode: drive this as a serial workflow loop instead — see [../references/workflow-orchestration.md](../references/workflow-orchestration.md).)
 >
 > **Before forking, confirm your working directory is the project root** — `/branch` and forks inherit the current cwd, and Claude's resume picker groups sessions by it. If the cwd has drifted into `reports/audit-<ts>/`, `cd` back to the project root first, or the forks won't show under this project in the resume picker (lessons-learned #17).
 >

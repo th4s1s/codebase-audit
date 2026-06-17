@@ -234,6 +234,21 @@ This file records pitfalls observed in actual codebase-audit runs. Read it **bef
 
 ---
 
+## 18. Verify shares one live instance — run it one finding at a time
+
+**Observed in:** Designing automated end-to-end runs — the instinct to spawn many verify subagents/forks at once against a single deployed instance.
+
+**Symptom:** Garbled, unreliable verification: concurrent forks back up / edit / restart the **same** config and instance, clobber each other's backups and state, and their PoCs interfere — producing "couldn't reproduce" outcomes that are really cross-fork interference.
+
+**Root cause:** Verify mutates and probes a **shared** live instance (config backup → edit → restart → restore). That is **not** independent work, so it must not be parallelized like mapping / deep-audit / FP-check.
+
+**Prevention:**
+- **One fork/agent per finding, run strictly serially** — only one finding is ever live against the instance at a time. In the Workflow-accelerated path this is a `for`-await loop (concurrency 1); **never** `parallel()` (see `workflow-orchestration.md`).
+- The per-finding **static** adversarial review (verify Step 2) is read-only — it re-derives from source + the captured evidence and never touches the instance — so its 2–3 reviewers MAY fan out in parallel.
+- Verifying manually on shared infra: open forks one at a time; don't run several in parallel.
+
+---
+
 ## How to add a new lesson
 
 When you encounter a new failure mode:
