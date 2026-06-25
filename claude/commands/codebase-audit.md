@@ -15,7 +15,6 @@ Read @__SKILL_DIR__/SKILL.md.
 2. @__SKILL_DIR__/workflows/deploy.md — deploy live instance, write live-instance note
 3. @__SKILL_DIR__/workflows/audit.md — CVE ingest, patch-bypass mining, parallel deep audit
 4. @__SKILL_DIR__/workflows/fpcheck.md — static false-positive review
-5. @__SKILL_DIR__/workflows/verify.md — per-finding live PoC (forked conversations)
-6. @__SKILL_DIR__/workflows/report.md — consolidated report + disclosure summary
+5. @__SKILL_DIR__/workflows/verify.md — open one fork per finding (serial); each fork verifies, adversarially reviews, and then writes its own `<id>-vuln-report.md` per @__SKILL_DIR__/workflows/report.md (Mode A). The report phase runs **in the fork** — there is no separate orchestrator report/consolidation step.
 
 Follow every Essential Principle and Rationalization-to-Reject in SKILL.md. Honor user gates between phases.

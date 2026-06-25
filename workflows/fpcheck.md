@@ -105,13 +105,13 @@ Present:
 
 > FP-check complete. N verdicts: X TP / Y FP / Z DUP. K TPs already have live PoC; M still need live verification.
 >
-> Next: open one forked conversation **per finding** that needs live verification, **from the project root**, and run them **one at a time** (serial — they share the live instance), using the fork prompt in the resume note. Each fork verifies a single finding and writes `artifacts/verify-<id>.md`. (Claude Code + ultracode: drive this as a serial workflow loop instead — see [../references/workflow-orchestration.md](../references/workflow-orchestration.md).)
+> Next: open one forked conversation **per finding** that needs live verification, **from the project root**, and run them **one at a time** (serial — they share the live instance), using the fork prompt in the resume note. Each fork verifies a single finding, writes `artifacts/verify-<id>.md`, and - if confirmed as a real vuln - writes its own `artifacts/<id>-vuln-report.md` (the report phase runs in the fork; no orchestrator consolidation). (Claude Code + ultracode: drive this as a serial workflow loop instead — see [../references/workflow-orchestration.md](../references/workflow-orchestration.md).)
 >
 > **Before forking, confirm your working directory is the project root** — `/branch` and forks inherit the current cwd, and Claude's resume picker groups sessions by it. If the cwd has drifted into `reports/audit-<ts>/`, `cd` back to the project root first, or the forks won't show under this project in the resume picker (lessons-learned #17).
 >
 > When all forks finish: come back here and say **go report** for Phase 6.
 >
-> **Before opening verify forks, run a manual compact here** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). The orchestrator will only need the FP verdicts + resume note to stitch the final report — everything else (per-finding source dives, dedup reasoning) is already on disk. Each verify fork starts in its own clean context anyway, so this compact is purely for the orchestrator.
+> **Before opening verify forks, run a manual compact here** (`/compact` in Claude Code or Codex CLI, Compact in Copilot Chat). The orchestrator only needs the FP verdicts + resume note while the verify forks run — everything else (per-finding source dives, dedup reasoning) is already on disk. Each verify fork (which verifies, reviews, and writes its own `<id>-vuln-report.md`) starts in its own clean context anyway, so this compact is purely for the orchestrator.
 
 ## Quality Checks
 

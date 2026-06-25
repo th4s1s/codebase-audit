@@ -3,7 +3,7 @@
 **Purpose**: Run the entire audit pipeline on source code **end-to-end with no human in the loop and no live instance** — for product teams who want a security report on a codebase before a release. Runs **recon → audit → fpcheck → report**; skips **deploy** and **verify** entirely.
 
 **Entry**: User invokes the **source** run (see SKILL.md → *How phases are invoked per client*) or asks for an "automated source-only audit". A source tree must be present.
-**Exit**: A consolidated report under `reports/audit-<timestamp>/` (`report.md`, `disclosure-summary.md`, `audit.db`) plus a printed counts-by-severity summary. No user gates, no live verification.
+**Exit**: One consolidated `reports/audit-<timestamp>/report.md` (plus `audit.db`) and a printed counts-by-severity summary. No user gates, no live verification.
 
 > **Workflow-accelerated (Claude Code + ultracode):** if the **Workflow tool is available to you**, drive this run as a deterministic workflow instead of by hand — see [../references/workflow-orchestration.md](../references/workflow-orchestration.md) (the `source` skeleton). Same source-only, gateless behavior; the script just fans out the within-phase work. Without the Workflow tool, follow the steps below inline.
 
@@ -44,15 +44,13 @@ Execute [fpcheck.md](fpcheck.md) as written (it is already **static-only**) with
 - Run the parallel FP-check subagents and populate `cba_fp_verdicts` exactly as normal.
 - **Skip** the "open verify forks" step and its gate — there is no verification in this mode. Continue straight to Step 4 with the TRUE_POSITIVE list.
 
-## Step 4 — report (auto, verification skipped)
+## Step 4 — report (auto, consolidated source-only)
 
-Execute [report.md](report.md), treating its **Step 1 MISSING-TP gate** as an explicit "all TPs source-only / verification skipped" decision (there are no verify forks in this mode):
-- Do **not** require or look for `verify-<id>.md` artifacts; do **not** stop. Tag **every** finding `(source-only — not live-verified)`.
-- Build `report.md` + `disclosure-summary.md` from the **TRUE_POSITIVE** verdicts in `cba_fp_verdicts`, ordered by source-assessed severity.
-- **Per-finding PoC honesty:** each finding's "Proof of Concept" section holds only the **source-level data-flow / reproduction sketch** (from `cba_findings.poc`), explicitly labeled **"source-only — not executed"**. **Never** paste or fabricate an HTTP request/response as if it were captured live evidence — there is none in this mode.
-- **Quality-check carve-out:** report.md's Step 6 QC items that reference verify-fork confirmation or "PoCs reproducible against the live instance" are **N/A** here; the accepted tag is `(source-only — not live-verified)` (not "infra-blocked").
-- **Honest-reporting caveat (mandatory):** state prominently near the top of both `report.md` and `disclosure-summary.md` that **all findings are static (source-level) true-positives that survived false-positive review but were NOT live-verified** — severities are source-assessed, and running the interactive `verify` phase against a live instance is recommended before any external disclosure.
-- **Skip** the report phase's pre-disclosure user gate — produce the artifacts and continue to Step 5.
+Execute [report.md](report.md) **Mode B (source-only, consolidated)** in this orchestrator — there is no live instance and no forks:
+- Write ONE `reports/audit-<timestamp>/report.md` covering all **TRUE_POSITIVE** verdicts from `cba_fp_verdicts`, ordered by source-assessed severity, with one section per finding using the six headings (title, Affected Version, Summary, Root Cause, Steps to reproduce, Impact).
+- **Steps to reproduce is a reproduction GUIDE only:** the concrete steps, inputs, and conditions an attacker or maintainer would use to trigger each bug, derived from source (`cba_findings.poc` + the per-group `artifacts/G<n>-findings.md`). There is no live instance: do **not** run a PoC and do **not** paste or fabricate any request/response output. Label it as a source-level guide.
+- **Caveat (mandatory):** state prominently near the top of `report.md` that all findings are static (source-level) true-positives that survived false-positive review but were **NOT live-verified**; running the interactive `verify` phase against a live instance is recommended before any external disclosure.
+- No `disclosure-summary.md`, no per-finding `<id>-vuln-report.md` files, no CVSS / severity tables. Do not pause; do not disclose; continue to Step 5.
 
 ## Step 5 — final summary (printed, no gate)
 
@@ -67,6 +65,6 @@ Do **not** perform any external disclosure. Stop.
 
 - [ ] recon, audit, fpcheck, report all completed **without pausing for input**
 - [ ] No deploy phase ran; no live-instance / `curl` / PoC was attempted; every finding is `verified='source-only'`
-- [ ] `report.md`, `disclosure-summary.md`, `audit.db` exist under `reports/audit-<timestamp>/`
+- [ ] One consolidated `report.md` + `audit.db` exist under `reports/audit-<timestamp>/` (no `disclosure-summary.md`, no per-finding files)
 - [ ] The report carries the source-only / not-live-verified caveat
 - [ ] Final severity-counts summary was printed; no disclosure performed

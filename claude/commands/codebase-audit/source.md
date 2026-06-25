@@ -7,4 +7,4 @@ Run the **automated source-only audit** of the codebase-audit skill — the full
 
 Optional user note: $ARGUMENTS
 
-Read @__SKILL_DIR__/SKILL.md, then execute @__SKILL_DIR__/workflows/source.md end-to-end: **recon → audit → fpcheck → report**, auto-proceeding through every phase (no user gates), source-only (no deploy, no live PoC, no verify). Honor the precedence rules at the top of source.md. Produce the consolidated report (`report.md` + `disclosure-summary.md` + `audit.db`), print a counts-by-severity summary, and stop. Do not perform any external disclosure.
+Read @__SKILL_DIR__/SKILL.md, then execute @__SKILL_DIR__/workflows/source.md end-to-end: **recon → audit → fpcheck → report**, auto-proceeding through every phase (no user gates), source-only (no deploy, no live PoC, no verify). Honor the precedence rules at the top of source.md. Produce one consolidated `report.md` (+ `audit.db`) whose Steps to reproduce are source-level reproduction guides, print a counts-by-severity summary, and stop. Do not perform any external disclosure.

@@ -12,9 +12,11 @@
 ```bash
 TS=$(date -u +%Y%m%d-%H%M%S)
 AUDIT_DIR="reports/audit-${TS}"
-mkdir -p "${AUDIT_DIR}/files" "${AUDIT_DIR}/artifacts"
+mkdir -p "${AUDIT_DIR}/files" "${AUDIT_DIR}/artifacts" "${AUDIT_DIR}/archived-poc"
 sqlite3 "${AUDIT_DIR}/audit.db" "SELECT 1;"  # create empty DB
 ```
+
+`archived-poc/` starts empty; verify forks may consult it for report-format examples, and the user archives each finalized report + its `poc/` into `archived-poc/<finding-id>/` after sending it to the maintainer.
 
 Record `AUDIT_DIR` — every later step uses it. **Stay at the project root for the whole audit: reference `${AUDIT_DIR}` by path, never `cd` into it.** Verify forks inherit the orchestrator's current directory and Claude's resume picker groups sessions by it, so a drifted cwd hides your forks and breaks the resume note's relative commands (see SKILL.md Essential Principle #10 and lessons-learned #17).
 

@@ -1,178 +1,125 @@
-# Phase 6: Report Generation
+# Report template (per-finding live + source consolidated)
 
-## Purpose
+The lean, maintainer-facing vulnerability-report format used by [../workflows/report.md](../workflows/report.md) in both modes:
 
-Create the final audit report as a single `report.md` file in a timestamped audit directory.
+- **Live, per-finding (in the fork)**: one file `reports/audit-<ts>/artifacts/<FINDING-ID>-vuln-report.md`.
+- **Source-only, consolidated (in the orchestrator)**: one `reports/audit-<ts>/report.md` with one finding-section per true positive, using the same headings.
 
-## Directory Creation
+Model these on the Redis audit reports (e.g. `G2-F1-vuln-report.md`): same structure and depth, with the lean style below.
 
+## Sections (exact, in order)
+
+```markdown
+# <FINDING-ID>: <one-line title; a CWE id is fine, e.g. (CWE-476)>
+
+## Affected Version
+- <product> version: `<x.y.z>`
+- Commit: `<sha>` (tag/branch if known)
+- optional build string in a ```text block
+
+## Summary
+1-2 short paragraphs. What the bug is, and the genuine attacker path (who controls
+which input, reaching which sink). Live: state it was confirmed on the stock build
+and that a control run with honest input behaves normally. Source-only: state plainly
+that this is a source-level finding, NOT live-verified.
+
+## Root Cause
+The code-level explanation. Cite `src/file.c:line`. Show the flaw and the flawed
+caller in minimal code blocks (only the relevant lines, annotated). Trace the data
+flow from attacker-controlled input to the sink. Note any guard that does NOT stop it.
+
+## Steps to reproduce
+Live: the bash setup; a Control (honest-input) run FIRST; then the attack run(s).
+Inline the PoC ("Save as `poc.py`") and stage a runnable copy at `poc/<name>`. Paste
+the REAL captured output verbatim (curl -i / server log / exit status).
+Source-only: a reproduction GUIDE - concrete steps, inputs, and conditions to trigger
+it, derived from source - with NO execution and NO captured output. Label it as a
+source-level guide.
+
+## Impact
+The concrete attacker capability and what is lost; the trust boundary crossed. Honest
+severity in prose (CRITICAL / HIGH / MEDIUM / LOW + a one-line justification). No CVSS
+score, no severity table.
 ```
-audit-YYYYMMDD-HHMMSS/
-└── report.md
-```
 
-Use the current date and time for the directory name. If PoC scripts were created during the audit, place them alongside the report.
-
-## Report Template
+## Annotated example (abridged, from a real report)
 
 ````markdown
-# Security Audit Report
+# G2-F1: NULL-pointer dereference in `ACLLoadFromFile()` crashes the server via `ACL LOAD` or at startup (CWE-476)
 
-**Target**: {application_name} {version}
-**Date**: {date}
-**Auditor**: {auditor_name_or_tool}
-**Methodology**: Parallel feature-mapped codebase audit
+## Affected Version
+- Redis version: `8.8.0`
+- Commit: `5a693aae` (tag `8.8.0`)
 
----
+## Summary
+`ACLLoadFromFile()` (`src/acl.c`) parses an ACL file line by line. When the selector
+merge helper hits an unmatched `(` it frees its array and returns `NULL` but leaves
+`*merged_argc >= 1`; the caller omits the `continue` and then indexes the NULL array,
+so `ACL LOAD` (or a malformed `aclfile` at startup) crashes the process with SIGSEGV.
+Confirmed on the stock 8.8.0 build; a control run with a valid ACL file stays healthy.
 
-## Executive Summary
-
-{1-2 paragraph overview of the audit scope, approach, and key results}
-
-**Finding Summary**:
-
-| Severity | Count |
-|----------|-------|
-| Critical | {n} |
-| High     | {n} |
-| Medium   | {n} |
-| Low      | {n} |
-| **Total** | **{n}** |
-
----
-
-## Architecture Overview
-
-{Brief description of the application architecture, technology stack, deployment model,
- and security-relevant design decisions. Include a diagram if helpful.}
-
-### Attack Surface
-
-| Entry Point | Method | Authentication | Feature Group |
-|-------------|--------|----------------|---------------|
-{table rows from cba_attack_surface}
-
----
-
-## Findings
-
-{For each confirmed finding, ordered by severity then by F-N ID:}
-
-### F-{N}: {Title}
-
-| Attribute | Value |
-|-----------|-------|
-| **Severity** | {CRITICAL/HIGH/MEDIUM/LOW} |
-| **CWE** | {CWE-NNN: Name} |
-| **CVSS** | {score if calculable} |
-| **Attacker Position** | {unauthenticated/authenticated/admin/local} |
-| **Boundary Crossed** | {description} |
-| **Affected Component** | {file:line or endpoint} |
-
-#### Description
-
-{2-4 paragraph technical description of the vulnerability, including:
- - What the vulnerability is
- - Why it exists (root cause)
- - Where in the code it manifests}
-
-#### Data Flow
-
+## Root Cause
+`ACLMergeSelectorArguments()` returns `NULL` without resetting `*merged_argc`:
+```c
+/* src/acl.c:2097 - unmatched '(' */
+if (open_bracket_start != -1) {
+    ...
+    return NULL;            /* *merged_argc still > 0 */
+}
 ```
-{source} → {processing steps} → {sink}
+The caller does not skip the line and dereferences the NULL array:
+```c
+/* src/acl.c:2396 */
+if (!acl_args) { errors = sdscatprintf(...); }   /* no continue */
+for (int j = 0; j < merged_argc; j++)
+    acl_args[j] = sdstrim(acl_args[j], ...);      /* acl_args == NULL -> SIGSEGV */
 ```
+Reachable at runtime (`ACL LOAD` -> `ACLLoadFromFile`, `src/acl.c:3018`) and at
+startup (`ACLLoadUsersAtStartup`, `src/acl.c:2585`).
 
-#### Impact
-
-{What an attacker achieves. Be specific and realistic.}
-
-#### Proof of Concept
-
+## Steps to reproduce
+Save as `poc.sh` (runnable copy at `poc/poc.sh`):
+```bash
+mkdir -p /tmp/g2-live
+printf 'user default on nopass ~* &* +@all\nuser bob on (+get\n' > /tmp/g2-live/users.acl
+src/redis-server --port 6399 --daemonize yes --dir /tmp/g2-live \
+  --aclfile /tmp/g2-live/users.acl --logfile poc.log
+src/redis-cli -p 6399 ACL LOAD
 ```
-{HTTP request, curl command, or script}
+Captured output:
+```text
+$ src/redis-cli -p 6399 ACL LOAD
+Error: Server closed the connection
+$ src/redis-cli -p 6399 PING
+Could not connect to Redis at 127.0.0.1:6399: Connection refused
 ```
+The server log shows `signal: 11` in the `ACLLoadFromFile` frame. A control run with a
+valid ACL file returns `OK` and the server stays up.
 
-{If live-tested, include the server response.}
-
-#### Remediation
-
-{Specific fix recommendation with code-level guidance.}
-
----
-
-## False Positive Analysis
-
-{Summary of the FP-check process and its results.}
-
-| Category | Count | Examples |
-|----------|-------|---------|
-| Hard Exclusion matches | {n} | {brief list} |
-| Precedent rule matches | {n} | {brief list} |
-| Capability Validity failures | {n} | {brief list} |
-| Duplicates merged | {n} | {brief list} |
-
-{Optionally include a paragraph on patterns observed — e.g., "Most FPs were due to
- the application's consistent use of parameterized queries, which eliminated
- all SQL injection candidates."}
-
----
-
-## Recommendations
-
-### Immediate (Critical/High findings)
-
-{Numbered list of urgent fixes, one per finding}
-
-### Short-term (Medium findings)
-
-{Numbered list of fixes for medium findings}
-
-### Long-term (Architectural)
-
-{Broader security improvements suggested by the audit}
-
----
-
-## Appendix
-
-### Methodology
-
-This audit used a parallel feature-mapped approach:
-1. Source detection and reconnaissance
-2. Feature mapping via {N} parallel subagents
-3. Deep vulnerability hunting via {N} parallel subagents
-4. False-positive verification using the bundled FP-check methodology
-5. Report generation
-
-### Feature Groups Audited
-
-| Group | Name | Features Mapped | Findings (pre-FP) | Confirmed |
-|-------|------|-----------------|-------------------|-----------|
-{table rows from cba_feature_groups joined with finding counts}
-
-### Tools Used
-
-- {list of tools: source code analysis, IDA Pro MCP, live testing, etc.}
+## Impact
+A principal able to write the `aclfile` plants one malformed line; a later `ACL LOAD`
+by an admin, or the next restart, crashes the server (SIGSEGV) instead of the
+documented "reject the file, keep previous ACLs". Denial of service across a trust
+boundary (file-writer to admin/restart). Severity: HIGH (low precondition on shared
+hosts, deterministic crash).
 ````
 
-## Severity Calibration
+## Severity (prose, no CVSS)
 
-Use these definitions consistently:
+Judge severity from the attacker's concrete gain and state it in one line in *Impact*:
 
-| Severity | Criteria |
-|----------|----------|
-| **CRITICAL** | Unauthenticated RCE, complete authentication bypass, or data breach affecting all users. CVSS ≥ 9.0. |
-| **HIGH** | Authenticated RCE, SSRF with internal network access, SQL injection with data access, privilege escalation from user to admin. CVSS 7.0-8.9. |
-| **MEDIUM** | Information disclosure of sensitive data, CSRF on sensitive operations, stored XSS, denial of service with amplification. CVSS 4.0-6.9. |
-| **LOW** | Information disclosure of non-sensitive data, reflected XSS requiring specific interaction, configuration weaknesses. CVSS < 4.0. |
+- **CRITICAL** - unauthenticated RCE, full auth bypass, or breach of all users' data.
+- **HIGH** - authenticated RCE, SSRF to the internal network, SQLi with data access, user-to-admin escalation, or a remotely reachable crash/DoS across a trust boundary.
+- **MEDIUM** - sensitive info disclosure, CSRF or stored XSS on sensitive operations, amplified DoS.
+- **LOW** - non-sensitive disclosure, interaction-heavy reflected XSS, configuration weakness.
 
-## Writing Style
+Apply the Marginal Gain Test: a self-healing, self-only, or operator-misconfiguration condition is Informational, not a vuln. Lead with the honest verdict; never inflate or defend an overstated rating under pushback.
 
-- **Technical precision**: Use exact file paths, function names, line numbers
-- **No speculation**: Every claim must be backed by code evidence or PoC output
-- **Measured, not asserted**: State the outcome you actually observed and quantified ("observed M/N crashes", "100% CPU for ≥X min, no return") — never "it would crash/hang". Prefer "**effectively unbounded** (expected N iterations)" over "infinite", and don't write "always"/"never" without evidence. Precise-and-quantified reads as *stronger*, not weaker.
-- **Attacker perspective**: Write impact from the attacker's point of view
-- **Honest severity**: Lead with what the attacker concretely gains (Marginal Gain Test). A self-healing / self-only / operator-misconfig condition is Informational, not a vuln — don't inflate, and don't defend an overstated rating under pushback.
-- **Actionable remediation**: Give specific code-level fixes, not generic advice like "validate input"
-- **Self-contained, portable PoC**: Stage custom PoC scripts/patches under a relative `poc/` dir with the **real captured output** embedded. Never reference the `reports/audit-<ts>/` path (the triager won't have it) and never ship prebuilt binaries — provide a patch + build script the maintainer can run from a clean checkout.
-- **Concise findings**: Each finding should be self-contained and readable in 2 minutes
+## Writing style
+
+- Technical precision: exact paths, function names, line numbers, values.
+- Measured, not asserted: state what you observed and quantified ("observed M/N", "effectively unbounded, expected N iterations"); never "it would crash" or a bare "infinite" / "always" / "never".
+- Actionable: the Root Cause and Impact should make the fix obvious; a one-line fix may be folded into Root Cause. Keep it lean - no separate Remediation or References section unless a patch-bypass needs the prior CVE/GHSA cited inline.
+- **No em-dashes.** Minimal `**`/`*`. Use `code spans` for symbols and paths.
+- Self-contained and reproducible: inline the PoC AND stage a runnable copy in `poc/` (live mode). Embed the real output. No prebuilt binaries. Never reference a `reports/audit-<ts>/` path.
+- Each finding readable in a couple of minutes.

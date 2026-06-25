@@ -17,7 +17,7 @@ It also **sidesteps the verify-fork resume bug** (lessons-learned #17): the work
 4. **Phases are sequential; state lives on disk.** `await` each phase before the next. Hand state between phases via the audit DB (`<AUDIT_DIR>/audit.db`) and the resume note — exactly as the inline pipeline does. Pass the absolute project root + `AUDIT_DIR` into every `agent()` (via the prompt / `args`).
 5. **Run from — and keep — the project root.** Launch the workflow with the orchestrator at the project root; every `agent()` operates from the project root (artifact paths are relative to it). Never `cd` into the audit dir (Essential Principle #10).
 6. **Verify is serial.** Anything that touches the live instance runs **one finding at a time** — a strict `for`-await loop (concurrency 1). Parallel live PoCs race on the shared instance's config backup/restart and produce chaos. The per-finding *static* adversarial review (verify Step 2) may fan out 2–3 **read-only** reviewers, since they re-derive from source + the captured evidence and never touch the instance — but only **one finding is ever live against the instance at a time**.
-7. **Never auto-disclose.** Produce `report.md` + `disclosure-summary.md` + `audit.db`, print a severity summary, and stop. No external disclosure without a human.
+7. **Never auto-disclose.** Produce the report(s) - live full pipeline: one `artifacts/<id>-vuln-report.md` per confirmed finding, written inside the verify step (no consolidation, no `disclosure-summary.md`); source: one consolidated `report.md` with source-level reproduction guides - plus `audit.db`, print a severity summary, and stop. No external disclosure without a human.
 
 ## Skeleton — `source` (source-only, gateless)
 
@@ -69,14 +69,15 @@ await parallel(fp.batches.map((b, i) => () =>                    // fan-out: one
     { label:`fp:batch${i+1}`, phase:'FP-check' })))
 
 phase('Report')
-await agent(`${ref} Read ${SK}/workflows/report.md + references/phase6-report.md. Verification is intentionally SKIPPED (source-only): tag every TP "(source-only — not live-verified)", build ${AUDIT}/report.md + ${AUDIT}/disclosure-summary.md from the TRUE_POSITIVE verdicts, with the not-live-verified caveat prominent. Do NOT disclose. Print a severity-counts summary.`, { phase:'Report' })
+// Mode B: ONE consolidated report; Steps to reproduce are source-level guides (no execution, no output).
+await agent(`${ref} Read ${SK}/workflows/report.md (Mode B) + references/phase6-report.md. Write ONE ${AUDIT}/report.md covering all TRUE_POSITIVE verdicts, one section per finding (six headings). Steps to reproduce = a source-level reproduction GUIDE only (no PoC run, no captured output). State prominently that findings are source-only, NOT live-verified. No disclosure-summary.md, no per-finding files, no CVSS/tables. Do NOT disclose.`, { phase:'Report' })
 
 log(`Source-only audit complete — ${AUDIT}/report.md (findings are source-only, NOT live-verified; run verify against a live instance before disclosure).`)
 ```
 
 ## Skeleton — full `/codebase-audit` (gateless under ultracode: adds deploy + SERIAL verify)
 
-Recon / audit / fpcheck / report are the same as the `source` skeleton **minus the source-only constraints** (audit may attempt live PoC; report uses the verify artifacts). The two deltas:
+Recon / audit / fpcheck are the same as the `source` skeleton **minus the source-only constraints** (audit may attempt live PoC). There is **no separate orchestrator Report phase** in the full pipeline - each confirmed finding's report is written inside the Verify loop (report.md Mode A). The deltas (deploy + serial verify-then-report):
 
 ```javascript
 const DEPLOY = { type:'object', additionalProperties:false, required:['live'], properties:{
@@ -102,6 +103,9 @@ if (LIVE) {
         agent(`${ref} Read ${SK}/workflows/verify.md (Step 2). FRESH, neutral reviewer of finding ${id} via the "${lens}" lens — re-derive from source + the captured evidence in ${AUDIT}/artifacts/verify-${id}.md. Do NOT touch the live instance. Return verdict + one-line reason.`,
           { label:`review:${id}:${lens}`, phase:'Verify' })))
       await agent(`${ref} Reconcile the three reviewer verdicts for ${id} into ${AUDIT}/artifacts/verify-${id}.md (Adversarial review section); if overturned, update its Status/Severity.`, { phase:'Verify' })
+      // report (Mode A) — write the per-finding vuln report IF it survived review as a real vulnerability
+      await agent(`${ref} Read ${SK}/workflows/report.md (Mode A) + references/phase6-report.md. If finding ${id} is still CONFIRMED as a real, worth-reporting vuln, write ${AUDIT}/artifacts/${id}-vuln-report.md (six headings; inline the PoC + paste the REAL captured output from verify-${id}.md; stage runnable scripts in poc/ referenced as poc/<name>, never a reports/audit path; lean style, no em-dashes). If it was overturned, skip the report.`,
+        { label:`report:${id}`, phase:'Verify' })
     }
   }
 } else {

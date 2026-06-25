@@ -30,7 +30,7 @@ A battle-tested methodology for auditing applications at scale. The workflow div
 
 5. **Subagent capability matters**: any subagent that must write artifacts, run SQL inserts, or hit the live instance needs a **writable** agent — never a read-only one (which silently produces no files/SQL). See the *Cross-client tool mapping* for each client's writable agent (Claude/Copilot `general-purpose`, NOT read-only `Explore`; Codex `spawn_agent`). (Lesson learned the hard way — see `references/lessons-learned.md`.)
 
-6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** (one fork/agent **per finding**), run **one at a time** so parallel PoCs don't race on the shared live instance. Forks write `verify-<finding-id>.md` artifacts; the orchestrator stitches them into the final report. Each fork also **adversarially reviews** its finding with fresh, read-only subagents (verify Step 2) before returning, so auditor bias and intentionally-vulnerable/test code are caught early. On Claude Code with the Workflow tool (ultracode), this runs as a serial loop of fresh agents — see [references/workflow-orchestration.md](references/workflow-orchestration.md).
+6. **Live verification is forked, not in-line**: After FP-check produces N true positives, each finding is verified in its **own forked conversation** (one fork/agent **per finding**), run **one at a time** so parallel PoCs don't race on the shared live instance. Each fork writes `verify-<finding-id>.md`, **adversarially reviews** its finding with fresh, read-only subagents (verify Step 2), and then - if it is a real, worth-reporting vuln - writes its own lean `<finding-id>-vuln-report.md` (the **report phase runs in the fork**; there is **no** orchestrator consolidation). On Claude Code with the Workflow tool (ultracode), this runs as a serial loop of fresh agents — see [references/workflow-orchestration.md](references/workflow-orchestration.md).
 
 7. **User gates control pacing**: User explicitly approves transitions between phases. Never auto-advance past a gate.
 
@@ -52,13 +52,13 @@ The skill supports six phases (invoke them individually after the prior phase co
 | `deploy` | [workflows/deploy.md](workflows/deploy.md) | Deploy live instance from source (Docker, build artifact, or local run); document in `/memories/repo/<project>-live-instance.md` | Recon done OR independent setup task | Live instance running; endpoints documented; live-instance note saved to repo memory |
 | `audit` | [workflows/audit.md](workflows/audit.md) | Load prior CVEs/advisories (find patch-bypass surfaces), **parallel deep-audit subagents** per group, write resume note | Recon + deploy done | `cba_known_findings`, `cba_findings` populated; per-group `artifacts/G<n>-findings.md`; resume note updated |
 | `fpcheck` | [workflows/fpcheck.md](workflows/fpcheck.md) | **Parallel FP-check subagents** apply Hard Exclusions / Precedent rules / Marginal Gain Test — **static review only**, no live testing; write resume note | Audit done | `cba_fp_verdicts` populated; per-batch `artifacts/phase5-batch<X>.md`; resume note updated |
-| `verify` | [workflows/verify.md](workflows/verify.md) | **Runs in a forked conversation**, requires finding-ID list. Per-finding live-instance PoC, then **adversarial review by fresh subagents** (Step 2); writes `artifacts/verify-<finding-id>.md`. Refuses to run without IDs. | FP-check produced TPs; user has opened a fork and passed `<ids>` (or pasted the orchestrator's fork prompt). | One verify artifact per finding in scope; CONFIRMED / REFUTED / INCONCLUSIVE, each adversarially reviewed (bias / intentionally-vulnerable-code checks). |
-| `report` | [workflows/report.md](workflows/report.md) | Runs in the orchestrator. **Step 1 ingests every `verify-<id>.md` from disk** and refuses to continue if any TP is missing an artifact (or explicit skip). Then writes consolidated `report.md` + vendor-facing `disclosure-summary.md`. | All verify forks finished (or explicitly skipped); orchestrator-side. | `report.md`, `disclosure-summary.md`, updated `cba_fp_verdicts.final_id`. |
-| `source` | [workflows/source.md](workflows/source.md) | **Automated source-only run** (composite): chains recon → audit → fpcheck → report **unattended** — no deploy, no live instance, no verify, **no user gates**. For product teams scanning a codebase before release. CVE ingest best-effort. | Fresh start; source tree present; no human supervision wanted | `report.md` + `disclosure-summary.md` + `audit.db`; all findings `verified='source-only'` (not live-verified) |
+| `verify` | [workflows/verify.md](workflows/verify.md) | **Runs in a forked conversation**, requires finding-ID list. Per-finding live PoC, **adversarial review** (Step 2), then writes `artifacts/verify-<finding-id>.md` and - for a confirmed finding - runs the report phase in the same fork. Refuses to run without IDs. | FP-check produced TPs; user opened a fork and passed `<ids>`. | `verify-<id>.md` per finding (CONFIRMED / REFUTED / INCONCLUSIVE) + `<id>-vuln-report.md` per confirmed finding. |
+| `report` | [workflows/report.md](workflows/report.md) | Write the vulnerability report(s) in the lean maintainer format (Summary / Root Cause / Steps + PoC / Impact). **Live: per-finding, run IN THE FORK** after verify → `artifacts/<id>-vuln-report.md` with real PoC + captured output. **Source: consolidated, run in the orchestrator** → one `report.md`, Steps = reproduction guide (no run/output). No consolidation, no `disclosure-summary.md`. | Live: a finding confirmed in its verify fork. Source: end of the `source` run. | Live: `artifacts/<id>-vuln-report.md` per confirmed finding + scripts in project-root `poc/`. Source: one consolidated `report.md`. |
+| `source` | [workflows/source.md](workflows/source.md) | **Automated source-only run** (composite): chains recon → audit → fpcheck → report **unattended** — no deploy, no live instance, no verify, **no user gates**. For product teams scanning a codebase before release. CVE ingest best-effort. | Fresh start; source tree present; no human supervision wanted | one consolidated `report.md` + `audit.db`; all findings `verified='source-only'` (not live-verified) |
 
-**Full pipeline mode**: orchestrator runs recon → deploy → audit → fpcheck → user opens forks → report. Each transition is gated.
+**Full pipeline mode**: orchestrator runs recon → deploy → audit → fpcheck → user opens one fork per finding (each fork verifies, reviews, and writes its own `<id>-vuln-report.md`). Each transition is gated; there is no separate orchestrator report step.
 
-**Automated source-only mode**: the **`source`** run does the recon → audit → fpcheck → report chain **unattended and without a live instance** — every gate auto-proceeds, deploy and verify are skipped, and it ends by writing the report (see [workflows/source.md](workflows/source.md)).
+**Automated source-only mode**: the **`source`** run does recon → audit → fpcheck → report **unattended and without a live instance** — every gate auto-proceeds, deploy and verify are skipped, and the orchestrator ends by writing one consolidated source-only `report.md` (Steps to reproduce are reproduction guides, no live PoC) (see [workflows/source.md](workflows/source.md)).
 
 ### How phases are invoked per client
 
@@ -112,14 +112,15 @@ On Claude Code, when the **Workflow tool is available to you** (ultracode is on)
 ```
                                   ┌─ resume note ←─ rewritten each phase
                                   │
-recon ──► deploy ──► audit ──► fpcheck ──► [open N forks] ──► report
-  │         │         │           │              │             │
-  │         │         │           │              ▼             │
-  │         │         │           │       verify-<id>.md       │
-  │         │         │           │       (per finding)        │
-  └─────────┴─────────┴───────────┴───────────────┴─────────────┘
+recon ──► deploy ──► audit ──► fpcheck ──► [1 fork PER FINDING, serial]
+  │         │         │           │                    │
+  │         │         │           │                    ▼
+  │         │         │           │     verify-<id>.md  +  <id>-vuln-report.md
+  │         │         │           │     (verify + review + report, all in the fork)
+  └─────────┴─────────┴───────────┴────────────────────┘
                        SQLite audit.db (single source of truth)
                        reports/audit-<timestamp>/artifacts/*.md
+                       (source-only run: one consolidated report.md, no forks)
 ```
 
 The automated **`source`** run uses the same diagram **minus deploy and the verify forks**: recon → audit → fpcheck → report, unattended (see [workflows/source.md](workflows/source.md)).
@@ -149,10 +150,13 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 ├── artifacts/
 │   ├── G<n>-findings.md            # per-group deep-audit output (audit)
 │   ├── phase5-batch<X>-*.md        # per-batch FP-check verdicts (fpcheck)
-│   └── verify-<finding-id>.md      # per-finding live PoC (verify)
-├── report.md                       # consolidated final report (report)
-└── disclosure-summary.md           # short vendor-facing summary (report)
+│   ├── verify-<finding-id>.md      # per-finding verification record (verify)
+│   └── <finding-id>-vuln-report.md # per-finding vuln report — LIVE (report, in the fork)
+├── archived-poc/<finding-id>/      # (user-managed) finalized report + poc, after sending
+└── report.md                       # ONE consolidated report — SOURCE-only run only (report)
 ```
+
+Plus `poc/` at the **project root** (outside `reports/`): runnable PoC scripts referenced by live reports as `poc/<name>`. Reports never reference a `reports/audit-<ts>/` path (the maintainer won't have it).
 
 ### Resume Note + Live-Instance Note
 
@@ -182,6 +186,8 @@ reports/audit-<YYYYMMDD-HHMMSS>/
 | "Static analysis is enough, skip live verify" | Live PoC is mandatory for vendor credibility. Use a fork. |
 | "Use a read-only / Explore agent for the subagents" | Use a **writable** subagent (Claude/Copilot `general-purpose`, NOT read-only `Explore`; Codex `spawn_agent`) — a read-only agent cannot write SQL/artifacts. |
 | "Verify in the main conversation to save tokens" | Forks isolate failure and noise. Always fork for verification. |
+| "Let the orchestrator consolidate one big report" | No. Each verify fork writes its own lean `<id>-vuln-report.md` (live); only the `source` run writes a single consolidated `report.md`. No `disclosure-summary.md`. |
+| "Reference the PoC at `reports/audit-<ts>/...` / paste lots of bold + em-dashes + a CVSS table" | The maintainer won't have that path — reference `poc/<name>`. Keep reports lean: six headings only, no em-dashes, minimal `**`/`*`, no CVSS/severity tables/boilerplate. |
 | "Skip the resume note this phase, it's fine" | Compaction is unpredictable. Always rewrite the resume note at phase end. |
 | "Context is still big enough, don't bother compacting yet" | Manual compact at every gate. Letting auto-compaction fire mid-phase frequently drops the exact state the next phase needs. The cost of compacting too early is zero; the cost of compacting too late is a corrupted audit. |
 | "My harness / ASan triggers it — that's a PoC" | A self-written harness, sanitizer abort, or debugger-injected condition proves a *defect*, not impact. Reproduce on the **stock production build** via the genuine attacker path with attacker-controlled inputs only. If the stock outcome is unobservable → Informational. |
@@ -222,7 +228,7 @@ To begin, route to the appropriate workflow:
 | [references/phase2-feature-mapping.md](references/phase2-feature-mapping.md) | Feature group taxonomy, subagent prompt, mapping format |
 | [references/phase4-deep-audit.md](references/phase4-deep-audit.md) | Deep audit subagent prompt, finding schema, dedup |
 | [references/phase5-fp-check.md](references/phase5-fp-check.md) | Batching strategy, FP rules, verdict schema |
-| [references/phase6-report.md](references/phase6-report.md) | Report template, severity calibration |
+| [references/phase6-report.md](references/phase6-report.md) | Lean per-finding + consolidated report template (Redis-style) + annotated example |
 | [references/resume-note-template.md](references/resume-note-template.md) | Standard resume-note format for compact survival |
 | [references/live-instance-template.md](references/live-instance-template.md) | Standard live-instance doc format |
 | [references/lessons-learned.md](references/lessons-learned.md) | Pitfalls observed in real audits |
@@ -234,8 +240,8 @@ To begin, route to the appropriate workflow:
 - [ ] Live instance is running and documented in repo memory
 - [ ] Every group was deep-audited; findings in `cba_findings` + `artifacts/G<n>-findings.md`
 - [ ] Every finding has a FP-check verdict in `cba_fp_verdicts`
-- [ ] Every TRUE_POSITIVE has either a `verify-<id>.md` artifact OR a documented "infra-blocked, source-only" reason
-- [ ] Final `report.md` exists with verified findings only, ordered by severity
+- [ ] Every TRUE_POSITIVE has a `verify-<id>.md` artifact OR a documented "infra-blocked, source-only" reason
+- [ ] Live: every confirmed vuln has its own lean `<id>-vuln-report.md` (real PoC + captured output; scripts in `poc/`). Source-only: one consolidated `report.md` with source-level reproduction guides
 - [ ] Resume note exists and reflects current state (would let a fresh orchestrator resume cleanly)
 
-**For the automated `source` run:** the *live instance* (line 2) and *verify artifact* (line 5) criteria do **not** apply — deploy and verify are skipped. Instead: every TRUE_POSITIVE is `verified='source-only'`; `report.md` + `disclosure-summary.md` carry the not-live-verified caveat; and the final severity-counts summary was printed.
+**For the automated `source` run:** the *live instance* and *verify artifact* criteria do **not** apply — deploy and verify are skipped. Instead: every TRUE_POSITIVE is `verified='source-only'`; the single consolidated `report.md` carries the not-live-verified caveat and its Steps are reproduction guides; and the final severity-counts summary was printed.

@@ -1,156 +1,85 @@
-# codebase-audit — report: Final Report Generation
+# codebase-audit — report: Vulnerability Report(s)
 
-**Purpose**: Stitch FP-check verdicts + verify-fork artifacts into the consolidated `report.md` and a short vendor-facing `disclosure-summary.md`.
+**Purpose**: Write the vulnerability report(s) in the lean, maintainer-facing format (template: [../references/phase6-report.md](../references/phase6-report.md)). There are **two modes**, decided by how the audit ran:
 
-**Entry**: All verify forks have finished (or have been explicitly skipped with documented reason). Runs in the **main orchestrator**, never in a fork.
-**Exit**: `report.md` + `disclosure-summary.md` in the audit dir. User gate before any external disclosure.
+- **Live, per-finding, in the fork** (full pipeline). After verify + adversarial review (verify.md Steps 1-2), for a finding the fork confirmed as a real, worth-reporting vulnerability, the **fork itself** writes one report at `reports/audit-<ts>/artifacts/<FINDING-ID>-vuln-report.md`, with the real PoC and captured output. There is no orchestrator consolidation.
+- **Source-only, consolidated, in the orchestrator** (the `source` run: no live instance, no forks). The **orchestrator** writes ONE `reports/audit-<ts>/report.md` covering all true positives, where *Steps to reproduce* is a reproduction guide (no PoC executed, no captured output).
+
+**Entry**:
+- Live: inside the verify fork, immediately after verify.md Step 2, for each finding the fork confirmed as real. Only real / worth-reporting findings reach this phase; REFUTED or not-worth-reporting findings stop at verify and never get a report.
+- Source-only: the orchestrator, at the end of the `source` run (see [source.md](source.md)).
+
+**Exit**:
+- Live: one `artifacts/<FINDING-ID>-vuln-report.md` per confirmed finding, plus its runnable scripts staged in the project-root `poc/`.
+- Source-only: one consolidated `report.md`.
+
+No `disclosure-summary.md`, no CVSS/severity tables, no orchestrator stitch step. Never auto-disclose.
 
 ---
 
-## Step 1 — Ingest verify artifacts (mandatory, before anything else)
+## Report format (both modes)
 
-This step is the canonical "orchestrator reads what the forks produced" — there is no separate ingest command. **You do not run any live-instance PoC here.**
+Follow the template in [../references/phase6-report.md](../references/phase6-report.md). Every report (each live per-finding file, and each finding-section of the source consolidated report) uses exactly these headings, in order:
 
-1. Locate the active audit dir from the resume note (fallback: `ls -td reports/audit-* | head -1`).
-2. Glob the artifacts:
-   ```bash
-   ls -1 reports/audit-<timestamp>/artifacts/verify-*.md 2>/dev/null
-   ```
-3. For each artifact, parse the `Status:` line (CONFIRMED | REFUTED | INCONCLUSIVE), the `Severity adjustment:` line, the one-sentence interpretation, and the **Adversarial review** outcome (note any finding the fork's fresh reviewers overturned or downgraded — those are already reflected in the Status/severity, don't reinstate them).
-4. Pull the canonical TP list:
-   ```sql
-   SELECT finding_id FROM cba_fp_verdicts WHERE verdict = 'TRUE_POSITIVE';
-   ```
-5. Reconcile artifacts ↔ TPs into this table:
-
-| finding_id | verify status | final severity | artifact | note |
-|---|---|---|---|---|
-| G1-F1 | CONFIRMED | HIGH | `verify-G1-F1.md` | Live PoC captured |
-| G1-F2 | INCONCLUSIVE (external) | MED | `verify-G1-F2.md` | Operator restart required |
-| G2-F5 | **MISSING** | n/a | _none_ | No fork has covered this TP |
-| … | … | … | … | … |
-
-6. **Gate**: if any TP row is `MISSING` AND has no documented "infra-blocked" justification in the resume note, **STOP and ask the user**:
-
-   > _Automated `source` mode: verification was intentionally skipped for **all** TPs (no live instance) — treat every TP as an explicit source-only skip, tag each `(source-only — not live-verified)`, and proceed without stopping. See [source.md](source.md)._
-
-   - Open another fork for the missing IDs (recommended), OR
-   - Explicitly skip (the finding will be tagged `(source-only — not live-verified)` in the report).
-
-   Provide a copy-pasteable fork prompt for the missing IDs (**one finding per fork**, run one at a time) so the user can immediately open the next fork. Do **not** proceed to Step 2 until every TP has an artifact or an explicit skip decision.
-
-7. Refresh `/memories/session/<project>-audit-resume.md` with a "Verify status snapshot" section: CONFIRMED / REFUTED / INCONCLUSIVE / MISSING counts. Mark verify DONE only if MISSING is empty (or every MISSING is user-skipped).
-
-## Step 2 — Drop REFUTED findings
-
-Findings marked REFUTED in their verify artifact are excluded from the report (but retained in `audit.db` for audit trail). Add them to the "False Positive Analysis" section of the report as "Refuted by live testing".
-
-## Step 3 — Final severity re-rank
-
-Final severity = `verify-<id>.md` final severity OR `cba_fp_verdicts.final_severity` if no verify artifact OR `cba_findings.severity` as last resort.
-
-Order: CRITICAL → HIGH → MEDIUM → LOW; within tier, group affinity then finding ID.
-
-Re-assign `final_id` (F-1, F-2, …) in this final order:
-
-```sql
-UPDATE cba_fp_verdicts SET final_id = 'F-' || <rank>
-WHERE finding_id = <id>;
+```
+# <FINDING-ID>: <one-line title (a CWE id is fine)>
+## Affected Version
+## Summary
+## Root Cause
+## Steps to reproduce
+## Impact
 ```
 
-## Step 4 — Write `report.md`
+Style (enforced):
+- **No em-dashes** (`—`). Use a spaced hyphen ` - ` or rewrite the sentence.
+- Use emphasis sparingly. Prefer `code spans` for symbols, paths, commands, and values; reserve `**bold**` for the rare load-bearing word.
+- Lean. Only the six headings. No CVSS scores, no severity tables, no disclosure timeline, no coverage matrix, no methodology appendix, no executive summary, no advisory boilerplate.
+- Cite source as `src/file.c:line`; reference PoC scripts as `poc/<name>`. **Never** reference a `reports/audit-<ts>/...` path - the maintainer will not have it.
+- For format examples you may consult `reports/audit-<ts>/archived-poc/<finding-id>/` (it may be empty on a first run; you do not need to match it exactly).
 
-Use [../references/phase6-report.md](../references/phase6-report.md) as the template. Required sections in order:
+## Mode A - Live, per-finding (run in the verify fork)
 
-1. **Title + metadata** (target, version/commit, audit date, methodology)
-2. **Executive summary** — 1-2 paragraphs + finding count table by severity
-3. **Architecture overview** — brief, with attack surface table
-4. **Findings** — one per confirmed TP, ordered F-1 → F-N. Each contains:
-   - Metadata table (severity, CWE, CVSS if calc, attacker position, boundary, affected file)
-   - Description (root cause)
-   - Data flow
-   - Impact
-   - **Proof of Concept** — paste the captured request + response from the verify artifact verbatim
-   - **Remediation** — code-level guidance
-   - **References** — link to upstream advisories if patch-bypass class
-5. **False Positive Analysis** — counts by category (HE-N, PR-N, refuted-by-live, dup-merged)
-6. **Recommendations** — by priority (immediate / short-term / long-term)
-7. **Appendix**:
-   - Methodology summary
-   - Feature group table with finding counts
-   - Tools used
-   - **Artifact directory listing** (so reader can audit our process)
+You have just finished verify.md Steps 1-2 for ONE finding and confirmed it is a real, worth-reporting vulnerability. Write `reports/audit-<ts>/artifacts/<FINDING-ID>-vuln-report.md`:
 
-### PoC packaging (for reproducibility)
+1. **Title + Affected Version** - the target product, version, and the commit/tag you tested on the live instance.
+2. **Summary** - what the bug is and the genuine attacker path; state it was confirmed on the stock, unmodified build, and that a control run with honest input behaves normally.
+3. **Root Cause** - the code-level explanation with `src/file.c:line` citations and minimal code blocks (the flaw, the flawed caller, the data flow from attacker input to sink).
+4. **Steps to reproduce** - the bash setup; the **Control (honest-input) run first**; then the attack run(s). Inline the PoC script as a code block ("Save as `poc.py`") AND stage a runnable copy under the project-root `poc/` (see *PoC packaging* below), referenced as `poc/<name>`. Paste the **real captured output verbatim** (the `curl -i` / server log / exit status you captured in verify) - never hand-write expected output.
+5. **Impact** - the concrete attacker capability and what is lost; the trust boundary crossed; honest severity in prose (no CVSS, no table).
 
-If the audit produced custom PoC scripts/patches, stage them in a single self-contained **`poc/` directory with relative paths** (e.g. `poc/run_poc.sh`, `poc/<bug>.patch`, `poc/output/`). The triager will **not** have your `reports/audit-<timestamp>/` tree — never reference that nested path in the report or PoC. Each PoC should:
-- run from a clean checkout (build any attacker-side patch from the included `.patch`; do **not** ship prebuilt binaries — the maintainer rebuilds and shouldn't trust an opaque binary);
-- embed the **real captured output** (paste exactly what the script printed — don't hand-write expected output);
-- keep the victim stock and state that the patch, if any, is the *attacker* side (see verify.md "PoC rigor + evidence model").
+The captured evidence already lives in your `verify-<id>.md`; reuse it. `verify-<id>.md` remains the verify-phase artifact - this report is a separate deliverable.
 
-## Step 4b — Adversarial self-verification (before disclosure)
+### PoC packaging (live)
 
-Each finding was already independently reviewed by fresh subagents in its verify fork (the **Adversarial review** section of `verify-<id>.md`); this pass is the orchestrator's lighter consolidation-time check — carry forward any DISPUTED/overturned outcome and don't reinstate a finding the fork's reviewers downgraded. Before the user gate, re-verify the report's claims against source + captured evidence — overstatement or a wrong citation in a bug-bounty submission is often disqualifying. For each finding, check three lenses (independent reviewers / subagents are ideal — they catch what the author's narrative misses):
-1. **Citations** — every `file:line`, quoted snippet, and constant matches the source at the audited commit.
-2. **Mechanism** — the root cause re-derives from scratch; the data flow actually reaches the sink.
-3. **Claims & severity** — every quantitative/behavioral claim is backed by the captured evidence, and the severity is not inflated.
+Move or copy any custom scripts you created into a `poc/` directory at the **project root** (not under `reports/audit-<ts>/`). Each script:
+- runs from a clean checkout; build any attacker-side patch from an included `.patch` - do **not** ship prebuilt binaries (the maintainer rebuilds and shouldn't trust an opaque binary);
+- embeds the real captured output;
+- keeps the victim stock - the patch, if any, is the **attacker** side (verify with `readlink /proc/<pid>/exe`; see verify.md "PoC rigor + evidence model").
 
-Tighten wording to what was measured: "**effectively unbounded** (expected N iterations)" not "infinite"; "**observed** M/N crashes" not "it crashes"; "single-component DoS" not "takes down the service" unless shown. Fix everything the pass catches before Step 5.
+The report inlines the script for reading AND points at `poc/<name>` for running. Per-finding / per-delivery: after a report is sent, the user archives that report + its `poc/` into `reports/audit-<ts>/archived-poc/<finding-id>/`.
 
-## Step 5 — Write `disclosure-summary.md`
+## Mode B - Source-only, consolidated (run in the orchestrator)
 
-A SHORT vendor-facing summary (≤2 pages). Sections:
+The `source` run has no live instance and no forks. Write ONE `reports/audit-<ts>/report.md` covering all true positives.
 
-1. **Affected versions** — exact commit/tag/version range
-2. **Summary table** — one row per finding: ID, title, severity, CWE, CVSS, file:line, patch-bypass classification
-3. **Critical findings, expanded** — for CRIT/HIGH only: 1-paragraph description + 1 PoC + 1 remediation line
-4. **Disclosure timeline placeholder** — discovery date, vendor contact, agreed disclosure date
+1. Pull the TPs:
+   ```sql
+   SELECT finding_id, final_severity FROM cba_fp_verdicts WHERE verdict = 'TRUE_POSITIVE';
+   ```
+   Read each finding's detail from `artifacts/G<n>-findings.md` + `cba_findings`.
+2. Write `report.md`: a short header (target, version/commit, audit date), then **one section per finding** ordered by severity, each using the six headings above (`#`/`##` per finding, `##`/`###` for its sub-sections - keep it consistent and skimmable).
+3. **Steps to reproduce is a reproduction GUIDE only** - the concrete steps, inputs, and conditions an attacker or maintainer would use to trigger the bug, derived from source. There is **no live instance**: do NOT run a PoC and do NOT paste captured output. Label the section as a source-level guide (not live-verified).
+4. State prominently near the top that all findings are **static (source-level) true-positives that survived false-positive review but were NOT live-verified**; running the interactive verify phase against a live instance is recommended before any external disclosure.
 
-This is the file you send when filing GHSA / contacting `security@…`.
+## Before you finalize (light self-check)
 
-## Step 6 — Final quality checks
+Re-read the report against source + (live mode) the captured evidence:
+- every `src/file.c:line` and quoted snippet matches the source at the tested commit;
+- the root cause re-derives from scratch and the data flow actually reaches the sink;
+- every behavioral claim is backed by the captured output (live) or clearly framed as a source-level expectation (source-only); severity is honest, not inflated.
 
-> _Automated `source` mode: every finding is tagged `(source-only — not live-verified)`; the verify-fork / "infra-blocked" wording in the first check and the "PoCs reproducible against the live instance" check below do **not** apply (there is no live instance). See [source.md](source.md)._
+Tighten wording to what was measured: "effectively unbounded (expected N iterations)" not "infinite"; "observed M/N" not "it crashes". Fix everything this pass catches.
 
-- [ ] Every finding in `report.md` is either CONFIRMED via verify-fork OR explicitly tagged as `(source-only — infra-blocked: <reason>)`
-- [ ] No REFUTED findings appear in the body (only in FP Analysis section)
-- [ ] All file:line references resolve in the target repo at the audited commit
-- [ ] All PoCs are reproducible against the documented live instance
-- [ ] `report.md` table-of-contents links work
-- [ ] Severity ordering is correct (CRIT first)
-- [ ] CWE numbers are valid (CWE-N where N is a real CWE)
-- [ ] Patch-bypass findings explicitly cite the prior CVE/GHSA
+## Do not disclose
 
-## Step 7 — USER GATE (before disclosure)
-
-> _Automated `source` mode supersedes this gate — write the report + disclosure summary, print the severity-counts summary, and stop. Do **not** perform any external disclosure (see [source.md](source.md))._
-
-Present:
-
-> Final report and disclosure summary are at:
-> - `reports/audit-<timestamp>/report.md`
-> - `reports/audit-<timestamp>/disclosure-summary.md`
->
-> Findings (final): X CRITICAL, Y HIGH, Z MEDIUM, W LOW.
->
-> Highest-value items for vendor disclosure: <top 3 with one-line each>
->
-> Next steps you should take (NOT me):
-> 1. Review the report personally
-> 2. File GHSA on github.com/<owner>/<repo>/security/advisories/new
-> 3. Email security@<vendor>.com with disclosure-summary.md attached
-> 4. Wait for vendor confirmation before publishing
->
-> I will NOT contact the vendor automatically. Disclosure is your call.
-
-## Step 8 — Update resume note one last time
-
-Mark report phase DONE. Leave the resume note in a "completed audit" state so a future session can re-open the audit to add late findings.
-
-## Quality Checks (final)
-
-- [ ] `report.md` exists and parses as valid markdown
-- [ ] `disclosure-summary.md` ≤ 2 printed pages
-- [ ] `audit.db` retained alongside the report
-- [ ] All `artifacts/` files retained (do NOT delete — they are the audit trail)
-- [ ] Resume note marked DONE
+Produce the report file(s) and stop. Never file an advisory, open an issue, or email a vendor - disclosure is the user's call. In the live full pipeline the fork returns its summary and the user collects the per-finding reports; in source mode the orchestrator prints a severity-counts summary and the `report.md` path.

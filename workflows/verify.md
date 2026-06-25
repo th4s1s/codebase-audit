@@ -1,9 +1,9 @@
 # codebase-audit — verify: Per-Finding Live PoC (Runs in a FORK)
 
-**Purpose**: Reproduce true-positive findings against the deployed live instance, then **adversarially review each one with fresh, unbiased subagents** before returning. **This workflow runs in a forked conversation** (or, under the Workflow-accelerated path, a fresh subagent), not the main orchestrator. **One fork/agent verifies exactly one finding** — write its artifact, then re-test it (Step 2) so bias and intentionally-vulnerable/test code are caught before the report.
+**Purpose**: Reproduce true-positive findings against the deployed live instance, then **adversarially review each one with fresh, unbiased subagents** before returning. **This workflow runs in a forked conversation** (or, under the Workflow-accelerated path, a fresh subagent), not the main orchestrator. **One fork/agent verifies exactly one finding** — write its `verify-<id>.md` artifact, re-test it (Step 2) so bias and intentionally-vulnerable/test code are caught, and then, if it is a real worth-reporting vulnerability, write its `<id>-vuln-report.md` (the report phase, run here in the fork).
 
 **Entry**: You are a forked conversation. The user pasted a verify-fork prompt **or** invoked the **verify** phase with a comma-separated finding-ID list (IDs are mandatory; see SKILL.md → *How phases are invoked per client* for your client's syntax). The audit's main orchestrator is paused awaiting fork completion.
-**Exit**: One `verify-<finding-id>.md` artifact per in-scope finding. Return a summary table to the user (for their situational awareness — the orchestrator does NOT need it pasted back; the **report** phase reads the artifacts directly from disk).
+**Exit**: One `verify-<finding-id>.md` artifact for the finding, plus a `<finding-id>-vuln-report.md` if it was confirmed as a real vulnerability (the **report** phase runs here in the fork — see [report.md](report.md)). Return a summary table to the user. There is no orchestrator consolidation: the per-finding reports are the deliverables.
 
 ---
 
@@ -11,7 +11,7 @@
 
 If the user invoked the **verify** phase with **no finding IDs and no pasted fork prompt**, stop immediately and respond:
 
-> The **verify** phase runs in a forked conversation and requires a finding-ID list. Re-invoke it with the IDs using your client's syntax — Claude: `/codebase-audit:verify G1-F1,G1-F2`; Copilot: `/codebase-audit verify G1-F1,G1-F2`; Codex: `$codebase-audit verify G1-F1,G1-F2`. To consolidate the artifacts produced by completed forks, run the **report** phase in this orchestrator — it ingests every `verify-<id>.md` from disk and refuses to continue if any TP is missing.
+> The **verify** phase runs in a forked conversation and requires a finding-ID list. Re-invoke it with the IDs using your client's syntax — Claude: `/codebase-audit:verify G1-F1,G1-F2`; Copilot: `/codebase-audit verify G1-F1,G1-F2`; Codex: `$codebase-audit verify G1-F1,G1-F2`. Each fork verifies one finding and then writes that finding's report (see [report.md](report.md)); there is no separate orchestrator report step to run.
 
 Do not attempt to guess intent. Do not run any PoC. Do not scan artifacts. Wait for the user to re-issue the correct command.
 
@@ -227,7 +227,7 @@ Record the result in each `verify-<id>.md` under the **Adversarial review** sect
 
 ## Step 3 — Do NOT modify `cba_findings` or `cba_fp_verdicts`
 
-That's the orchestrator's job in the report phase. You only write artifact files.
+Leave the SQL tables as-is. You only write artifact files: `verify-<id>.md` and, for a confirmed finding, `<id>-vuln-report.md`.
 
 ## Step 4 — Final restoration check
 
@@ -248,9 +248,19 @@ For `external-provided` mode (no filesystem / no lifecycle access), just re-run 
 curl -sSI <base-url>/<known-stable-route>            # status unchanged vs Step 0
 ```
 
-## Step 5 — Return summary
+## Step 5 — Write the vulnerability report (CONFIRMED findings)
 
-Return a compact markdown table to the user (this is for the user's situational awareness — **the orchestrator does NOT need it pasted back**, it reads the `verify-<id>.md` artifacts directly from disk):
+For the finding you just confirmed as a real, worth-reporting vulnerability, write its report now, here in the fork, following [report.md](report.md) (Mode A) and the template in [../references/phase6-report.md](../references/phase6-report.md):
+
+- Write `reports/audit-<ts>/artifacts/<finding-id>-vuln-report.md` with the six headings: `# <id>: <title>`, `## Affected Version`, `## Summary`, `## Root Cause`, `## Steps to reproduce`, `## Impact`.
+- In *Steps to reproduce*, inline the PoC and paste the **real captured output** from your verification above; stage any runnable scripts under the project-root `poc/` and reference them as `poc/<name>` (never a `reports/audit-<ts>/` path).
+- Lean style: no em-dashes, minimal `**`/`*`, no CVSS / severity tables / boilerplate. You may consult `reports/audit-<ts>/archived-poc/<finding-id>/` for format examples (it may be empty).
+
+Skip this for findings that are REFUTED or not worth reporting — they stop at the `verify-<id>.md` artifact and never get a report.
+
+## Step 6 — Return summary
+
+Return a compact markdown table to the user (this is for the user's situational awareness — **the orchestrator does NOT need it pasted back**):
 
 | Finding | Status | Severity (orig → final) | Review | One-line note |
 |---|---|---|---|---|
@@ -258,7 +268,7 @@ Return a compact markdown table to the user (this is for the user's situational 
 | G<n>-F<k> | REFUTED | MED → — | overturned: test-code | reviewers flagged intentionally-vulnerable example |
 | … | … | … | … | … |
 
-Plus a one-paragraph high-level summary. The user can close this fork once the table looks right; the orchestrator will pick the artifacts up on its next **verify** (ingest) or **report** invocation.
+Plus a one-paragraph high-level summary. The user can close this fork once the table looks right and its `<id>-vuln-report.md` is written. There is no orchestrator consolidation step — the per-finding reports are the deliverables.
 
 ## Common Pitfalls (see also [../references/lessons-learned.md](../references/lessons-learned.md))
 
@@ -280,6 +290,7 @@ Plus a one-paragraph high-level summary. The user can close this fork once the t
 ## Quality Checks (before returning)
 
 - [ ] Every in-scope finding has a `verify-<id>.md` artifact
+- [ ] Every CONFIRMED, worth-reporting finding has a `<id>-vuln-report.md` (six headings; inlined PoC + real captured output; runnable scripts staged in `poc/`; no `reports/audit-<ts>/` paths; no em-dashes)
 - [ ] Every CONFIRMED finding includes full captured HTTP response
 - [ ] Every REFUTED finding cites the specific code/config that blocks the PoC
 - [ ] All config backups have been restored
@@ -291,4 +302,4 @@ Plus a one-paragraph high-level summary. The user can close this fork once the t
 - [ ] Every CONFIRMED finding was **adversarially reviewed by ≥2 fresh subagents** given a neutral (verdict-free) prompt, with the outcome recorded in its `verify-<id>.md`
 - [ ] Any finding a reviewer flagged as intentionally-vulnerable / test code or invalid-PoC was **re-examined and reconciled** (Status / severity updated, or the override justified)
 
-> **Consolidation happens in `report`, not here.** The orchestrator picks up every `verify-<id>.md` you write via [report.md](report.md) Step 1. Do not implement an orchestrator-side ingest in this workflow.
+> **The report phase runs here in the fork.** Each finding you confirm as a real vulnerability gets its own `<id>-vuln-report.md` (see [report.md](report.md) Mode A). There is no orchestrator-side consolidation — the per-finding reports are the deliverables.

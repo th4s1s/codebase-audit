@@ -87,12 +87,9 @@ Total: <N> observations.
 You are a forked conversation from <project> audit `audit-<timestamp>`. Workspace: <path>. **Work from the project root `<path>` — the artifact paths below are relative to it; never run from inside `reports/`.** Read /memories/session/<project>-audit-resume.md (Phase 5.5 section) AND /memories/repo/<project>-live-instance.md first. Your scope: live-verify finding <ID> (one finding per fork) as Fork <X>. If you open several forks, run them ONE AT A TIME — they share the live instance. Run this skill's verify phase for that finding (Claude: `/codebase-audit:verify <ID>`; Codex: `$codebase-audit verify <ID>`; Copilot: `/codebase-audit verify <ID>`); if you need the raw steps, read `<SKILL_DIR>/workflows/verify.md` (the orchestrator substitutes <SKILL_DIR> with its own install root — e.g. ~/.claude/skills/codebase-audit, ~/.agents/skills/codebase-audit (Codex), or ~/.copilot/skills/codebase-audit). Write the artifact at reports/audit-<ts>/artifacts/verify-<ID>.md; if it is CONFIRMED, adversarially review it with fresh read-only subagents (verify.md Step 2) and record the outcome in the artifact. Return the result when done.
 ```
 
-## Phase 6 (stitch in this root conversation after all forks finish)
-1. `ls reports/audit-<ts>/artifacts/verify-*.md` to enumerate verification outcomes
-2. Drop REFUTED findings
-3. Re-rank by final severity
-4. Generate `reports/audit-<ts>/report.md` per `references/phase6-report.md`
-5. Generate `reports/audit-<ts>/disclosure-summary.md` (short, vendor-facing)
+## Phase 6 (report)
+- **Live:** each verify fork wrote its finding's `reports/audit-<ts>/artifacts/<id>-vuln-report.md` (lean format; real PoC + captured output; runnable scripts in the project-root `poc/`) per `references/phase6-report.md`. There is **no** orchestrator consolidation and **no** `disclosure-summary.md`.
+- **Source-only:** the orchestrator wrote ONE consolidated `reports/audit-<ts>/report.md` (Steps to reproduce are source-level reproduction guides; findings are not live-verified).
 
 ## Quirks / Lessons specific to this audit
 - <e.g., "read-only subagents returned no findings — re-ran with a writable agent (Claude/Copilot general-purpose)">
